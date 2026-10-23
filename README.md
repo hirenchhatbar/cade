@@ -1,0 +1,153 @@
+# cade
+
+A small terminal ADE for [Claude Code](https://claude.com/claude-code). The left sidebar lists your
+projects and their Claude sessions as a tree; the right pane runs the real `claude` CLI for the
+selected session. cade is only a wrapper: every key, paste and mouse event in the Claude pane goes
+to Claude unchanged, so Claude's own shortcuts and commands keep working.
+
+```
+ SESSIONS               cade v0.1.0 │ cade › fix login flow (34b6e4a0)
+ ▾ cade  ~/code/cade                │
+   ├─ [n] new session               │   (claude runs here)
+   ├─ ● fix login flow   (34b6e4a0) │
+   └─ Initialise proje…  (00d20d9a) │
+ ▸ other  ~/code/other              │
+ ─────────────────────────────────  │
+ [j/k] move   [⇧↑/⇧↓] project       │
+ ...                                │
+```
+
+## Requirements
+
+- Linux (macOS should work but is untested), and `claude` on your `PATH`.
+- A terminal with the kitty keyboard protocol (kitty, foot, WezTerm, Ghostty, Alacritty) to get
+  every key combination through, including `Ctrl+Esc`. Other terminals work with reduced key
+  fidelity.
+- 24-bit colour for the Dracula theme to look right.
+- Docker, to build. The binary itself runs on the host.
+
+## Build and run
+
+```sh
+make setup      # once: build the dev image
+make build      # static binary at bin/cade
+./bin/cade      # run from any directory
+```
+
+Run cade on the host, not inside the container: it needs your `claude` binary and `~/.claude`.
+
+## Usage
+
+On first start cade adds the directory you launched it from as a project. Add more with `a`.
+Sessions are read from `~/.claude/projects` and refreshed every 2 seconds. A session's title is its
+`/rename` name, else its agent name, else Claude's AI title, else its first prompt.
+
+Press `?` for the shortcut dialog.
+
+### Sidebar
+
+| Key | Action |
+|---|---|
+| `j`/`k`, `↑`/`↓` | move |
+| `g`/`G`, `Home`/`End` | top / end |
+| `Shift+↑` / `Shift+↓` | previous / next project |
+| `←` / `→` | collapse / expand project (`←` on a session jumps to its project) |
+| `l`, `Enter`, click | open session (new session on a project row) |
+| `n` | new session in the current project |
+| `a` | add project (name, then directory) |
+| `Shift+PgUp` / `Shift+PgDn` | move project up / down |
+| `d` | delete session from disk (asks first, can't be undone) |
+| `dd` | remove project from cade's list (asks first, keeps its files and sessions) |
+| `Tab` / `Esc` | go to the Claude pane |
+| `H` | show / hide the hints |
+| `?` | shortcut dialog |
+| `q`, `Ctrl+c` | quit |
+
+Mouse wheel and the scrollbar scroll the list when it doesn't fit.
+
+### Claude pane
+
+| Key | Action |
+|---|---|
+| `Ctrl+Esc` (or `F12`) | switch between sidebar and pane |
+| `PgUp`/`PgDn`, `Shift+PgUp`/`Shift+PgDn` | scroll back / forward |
+| wheel, scrollbar drag | scroll |
+| drag, double-click, triple-click | select text, word, line; copied to the clipboard |
+| anything else | sent to Claude as-is |
+
+Open sessions keep running when you switch to another one; `●` marks them. Copying uses OSC 52, so
+your terminal must allow clipboard writes from programs. If Claude turns on mouse reporting, hold
+`Shift` to select.
+
+## Configuration
+
+All files live in `~/.config/cade/` (`$XDG_CONFIG_HOME/cade/` if set; on macOS
+`~/Library/Application Support/cade/`).
+
+| File | Written by | Contents |
+|---|---|---|
+| `projects.json` | cade | projects, their order and collapsed state |
+| `state.json` | cade | remembered UI state (hints hidden) |
+| `config.json` | you | theme |
+
+### Themes
+
+Dracula is the default. Built-in themes are `dracula` and `terminal` (your terminal's own colours).
+
+```json
+{ "theme": "dracula" }
+```
+
+Define your own; fields you leave out come from Dracula:
+
+```json
+{
+  "theme": "mine",
+  "themes": {
+    "mine": { "key": "#50fa7b", "titleBg": "#ff79c6" }
+  }
+}
+```
+
+Colour fields, as `#rrggbb`: `bg`, `fg`, `muted`, `project`, `selBg`, `selFg`, `key`, `running`,
+`thumb`, `error`, `titleBg`, `titleFg`. A bad config falls back to Dracula and shows the error in
+the sidebar. The config is read at startup. Themes colour cade's own panels only; the Claude pane
+uses Claude's `/theme`.
+
+## Development
+
+| Command | Does |
+|---|---|
+| `make build` | compile `bin/cade` (static) |
+| `make test` | run tests |
+| `make vet` / `make fmt` | static checks / format |
+| `make tidy` | tidy `go.mod` |
+| `make shell` | shell in the dev container |
+| `make image` | build the production image |
+| `make clean` | remove build output and the cache volume |
+| `make bump` | bump the version: `PART=patch\|minor\|major` (default patch) or `V=x.y.z` |
+
+All Go commands run in Docker through `compose.yaml`. `make bump` runs on the host and needs GNU
+`sed`.
+
+### Layout
+
+| Path | Contents |
+|---|---|
+| `cmd/cade/main.go` | app: event loop, sidebar, Claude pane, dialogs |
+| `cmd/cade/sessions.go` | reading sessions and titles from `~/.claude/projects` |
+| `cmd/cade/projects.go` | project list and state files |
+| `cmd/cade/theme.go` | themes and `config.json` |
+| `third_party/vaxis` | vendored [Vaxis](https://git.sr.ht/~rockorager/vaxis) v0.17.1 |
+
+Vaxis is vendored (via a `replace` in `go.mod`) for one added file,
+`widgets/term/scrollinfo.go`, which exposes the terminal widget's scroll position for the
+scrollbar. To upgrade Vaxis, copy the new release into `third_party/vaxis` and keep that file.
+
+## Known limits
+
+- Title truncation counts characters, not display width, so wide characters (CJK, emoji) can
+  misalign a row.
+- If you switch sessions inside a pane with `/resume` or `/clear`, the sidebar still shows the
+  session the pane was opened with.
+- `Ctrl+Esc` needs the kitty keyboard protocol; without it use `F12`.

@@ -1,0 +1,93 @@
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+type project struct {
+	Name      string    `json:"name"`
+	Dir       string    `json:"dir"`
+	Collapsed bool      `json:"collapsed,omitempty"`
+	sessions  []session // loaded from ~/.claude/projects, not persisted
+}
+
+func projectsPath() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		dir = filepath.Join(os.Getenv("HOME"), ".config")
+	}
+	return filepath.Join(dir, "cade", "projects.json")
+}
+
+func loadProjects(path string) ([]*project, error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var ps []*project
+	return ps, json.Unmarshal(b, &ps)
+}
+
+// saveProjects writes via a temp file so a crash can't leave a half-written list.
+func saveProjects(path string, ps []*project) error { return writeJSON(path, ps) }
+
+// state is UI state cade remembers between runs (kept apart from the
+// hand-edited config.json so cade never rewrites that file).
+type state struct {
+	HideHints bool `json:"hideHints"`
+}
+
+func statePath() string { return filepath.Join(filepath.Dir(projectsPath()), "state.json") }
+
+func loadState(path string) state {
+	var st state
+	if b, err := os.ReadFile(path); err == nil {
+		json.Unmarshal(b, &st) // a broken file just means defaults
+	}
+	return st
+}
+
+func writeJSON(path string, v any) error {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+// expandDir resolves user input (~, relative paths) to an existing absolute directory.
+func expandDir(in, home string) (string, error) {
+	in = strings.TrimSpace(in)
+	if in == "" {
+		return "", errors.New("directory is required")
+	}
+	if in == "~" || strings.HasPrefix(in, "~/") {
+		in = filepath.Join(home, in[1:])
+	}
+	dir, err := filepath.Abs(in)
+	if err != nil {
+		return "", err
+	}
+	st, err := os.Stat(dir)
+	if err != nil {
+		return "", errors.New("no such directory")
+	}
+	if !st.IsDir() {
+		return "", errors.New("not a directory")
+	}
+	return dir, nil
+}
