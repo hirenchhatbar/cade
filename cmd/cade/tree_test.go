@@ -32,11 +32,11 @@ func TestTreeNavigation(t *testing.T) {
 	}
 
 	a.cursor = 2 // on s1, move project a down
-	a.moveProject(1)
+	a.moveSaved(1)
 	if a.projects[0].Name != "b" || a.rows()[a.cursor] != (row{1, 0}) {
 		t.Fatalf("after move: %s first, cursor %v", a.projects[0].Name, a.rows()[a.cursor])
 	}
-	a.moveProject(1) // already last: no-op
+	a.moveSaved(1) // already last: no-op
 	if a.projects[1].Name != "a" {
 		t.Fatal("moved past end")
 	}
@@ -131,38 +131,38 @@ func TestMergeKeepsOrder(t *testing.T) {
 func TestFold(t *testing.T) {
 	a := &app{cfgPath: filepath.Join(t.TempDir(), "projects.json")}
 	a.projects = []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}, {Name: "b", Dir: "/b"}}
-	a.cursor = 2 // s1
-	a.fold(true) // Left on a session: jump to header
+	a.cursor = 2      // s1
+	a.foldSaved(true) // Left on a session: jump to header
 	if a.cursor != 0 || a.projects[0].Collapsed {
 		t.Fatalf("left on session: cursor %d collapsed %v", a.cursor, a.projects[0].Collapsed)
 	}
-	a.fold(true)
+	a.foldSaved(true)
 	if !a.projects[0].Collapsed || len(a.rows()) != 3 || a.rows()[1] != (row{1, rowHeader}) {
 		t.Fatalf("collapse: rows %v", a.rows())
 	}
 	if saved, _ := loadProjects(a.cfgPath); !saved[0].Collapsed {
 		t.Fatal("collapsed state not saved")
 	}
-	a.fold(false)
+	a.foldSaved(false)
 	if a.projects[0].Collapsed || len(a.rows()) != 5 {
 		t.Fatal("expand failed")
 	}
 }
 
 func TestScrollTree(t *testing.T) {
-	a := &app{visible: 3}
+	a := &app{tree: tree{visible: 3}}
 	a.projects = []*project{{Name: "a", Dir: "/a", sessions: make([]session, 8)}} // 10 rows
 	a.cursor = 0
-	a.scrollTree(5)
+	a.scroll(5)
 	if a.top != 5 || a.cursor != 5 {
 		t.Fatalf("scroll down: top %d cursor %d", a.top, a.cursor)
 	}
-	a.scrollTree(100)
+	a.scroll(100)
 	if a.top != 7 {
 		t.Fatalf("clamp bottom: top %d", a.top)
 	}
 	a.cursor = 9
-	a.scrollTree(-4)
+	a.scroll(-4)
 	if a.top != 0 || a.cursor != 2 {
 		t.Fatalf("scroll up: top %d cursor %d", a.top, a.cursor)
 	}

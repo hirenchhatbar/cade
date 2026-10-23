@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -77,19 +78,16 @@ func loadTheme(path string) (theme, error) {
 	return t, nil
 }
 
+// inherit fills p's empty fields from base. Reflection keeps palette's field
+// list the only place colors are enumerated.
 func inherit(p, base palette) palette {
-	pick := func(a, b string) string {
-		if a != "" {
-			return a
+	pv, bv := reflect.ValueOf(&p).Elem(), reflect.ValueOf(base)
+	for i := range pv.NumField() {
+		if pv.Field(i).String() == "" {
+			pv.Field(i).SetString(bv.Field(i).String())
 		}
-		return b
 	}
-	return palette{
-		Bg: pick(p.Bg, base.Bg), Fg: pick(p.Fg, base.Fg), Muted: pick(p.Muted, base.Muted),
-		Project: pick(p.Project, base.Project), SelBg: pick(p.SelBg, base.SelBg), SelFg: pick(p.SelFg, base.SelFg),
-		Key: pick(p.Key, base.Key), Running: pick(p.Running, base.Running), Thumb: pick(p.Thumb, base.Thumb),
-		Error: pick(p.Error, base.Error), TitleBg: pick(p.TitleBg, base.TitleBg), TitleFg: pick(p.TitleFg, base.TitleFg),
-	}
+	return p
 }
 
 // theme is a palette resolved into ready-to-use styles.

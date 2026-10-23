@@ -18,6 +18,45 @@ type session struct {
 	Title string
 }
 
+// short is the 8-character ID prefix shown next to titles.
+func (s session) short() string { return s.ID[:min(8, len(s.ID))] }
+
+// deleteSessionFiles removes a session's transcript and its per-session folder.
+func deleteSessionFiles(home, cwd, id string) error {
+	base := filepath.Join(projectDir(home, cwd), id)
+	if err := os.Remove(base + ".jsonl"); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return os.RemoveAll(base) // tool-results etc., if any
+}
+
+// merge keeps the shown order stable (resuming a session bumps its mtime, which
+// would otherwise move it to the top): sessions new on disk go first, known ones
+// stay in place with fresh titles, cade-started ones not yet on disk are kept.
+func merge(shown, loaded []session, pending map[string]bool) []session {
+	byID := map[string]session{}
+	for _, l := range loaded {
+		byID[l.ID] = l
+	}
+	known := map[string]bool{}
+	var kept []session
+	for _, s := range shown {
+		known[s.ID] = true
+		if l, ok := byID[s.ID]; ok {
+			kept = append(kept, l)
+		} else if pending[s.ID] {
+			kept = append(kept, s)
+		}
+	}
+	var fresh []session
+	for _, l := range loaded {
+		if !known[l.ID] {
+			fresh = append(fresh, l)
+		}
+	}
+	return append(fresh, kept...)
+}
+
 var nonAlnum = regexp.MustCompile(`[^A-Za-z0-9]`)
 
 // projectDir mirrors how Claude Code names ~/.claude/projects/<dir>.

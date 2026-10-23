@@ -80,11 +80,16 @@ func (t *tree) header(dir int) int {
 func (t *tree) fold(collapse bool) bool {
 	cur := t.current()
 	p := t.projects[cur.p]
-	defer t.restore(rowKey{dir: p.Dir, s: rowHeader})
-	if (collapse && cur.s != rowHeader) || p.Collapsed == collapse {
+	header := rowKey{dir: p.Dir, s: rowHeader}
+	if collapse && cur.s != rowHeader {
+		t.restore(header)
+		return false
+	}
+	if p.Collapsed == collapse {
 		return false
 	}
 	p.Collapsed = collapse
+	t.restore(header)
 	return true
 }
 
