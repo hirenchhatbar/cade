@@ -42,38 +42,39 @@ On first start cade adds the directory you launched it from as a project. Add mo
 Sessions are read from `~/.claude/projects` and refreshed every 2 seconds. A session's title is its
 `/rename` name, else its agent name, else Claude's AI title, else its first prompt.
 
-Press `?` for the shortcut dialog.
+Press `?` for the shortcut dialog. `cade --help` lists the command-line options.
+
+The tables below are the output of `cade --keys`; regenerate them from there when shortcuts change.
 
 ### Sidebar
 
 | Key | Action |
 |---|---|
-| `j`/`k`, `↑`/`↓` | move |
-| `g`/`G`, `Home`/`End` | top / end |
-| `Shift+↑` / `Shift+↓` | previous / next project |
-| `←` / `→` | collapse / expand project (`←` on a session jumps to its project) |
-| `l`, `Enter`, click | open session (new session on a project row) |
-| `n` | new session in the current project |
+| `j/k` | move down / up (also ↓/↑) |
+| `⇧↑/⇧↓` | previous / next project |
+| `l/⏎` | open session (click works too; new one on a project row) |
+| `n` | new session in this project |
+| `←/→` | collapse / expand project |
 | `a` | add project (name, then directory) |
-| `Shift+PgUp` / `Shift+PgDn` | move project up / down |
-| `d` | delete session from disk (asks first, can't be undone) |
-| `dd` | remove project from cade's list (asks first, keeps its files and sessions) |
-| `Tab` / `Esc` | go to the Claude pane |
-| `H` | show / hide the hints |
-| `?` | shortcut dialog |
-| `q`, `Ctrl+c` | quit |
-
-Mouse wheel and the scrollbar scroll the list when it doesn't fit.
+| `⇧PgUp/Dn` | move project up / down |
+| `d/dd` | d: delete session from disk · dd: remove project from list (both ask) |
+| `g/G` | top / end |
+| `⇥` | go to Claude pane |
+| `?` | this help |
+| `q` | quit |
+| `H` | show / hide these hints |
 
 ### Claude pane
 
 | Key | Action |
 |---|---|
-| `Ctrl+Esc` (or `F12`) | switch between sidebar and pane |
-| `PgUp`/`PgDn`, `Shift+PgUp`/`Shift+PgDn` | scroll back / forward |
-| wheel, scrollbar drag | scroll |
-| drag, double-click, triple-click | select text, word, line; copied to the clipboard |
-| anything else | sent to Claude as-is |
+| `Ctrl+Esc` | switch sidebar ↔ pane (also F12) |
+| `⇧PgUp/Dn` | scroll back / forward (PgUp/PgDn too) |
+| `wheel` | scroll; or drag the scrollbar |
+| `drag` | select text, 2×click word, 3×click line → copied |
+| `other keys` | sent to Claude as-is |
+
+Mouse wheel and the scrollbar scroll the list when it doesn't fit.
 
 Open sessions keep running when you switch to another one; `●` marks them. Copying uses OSC 52, so
 your terminal must allow clipboard writes from programs. If Claude turns on mouse reporting, hold

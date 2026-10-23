@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -76,9 +77,8 @@ type app struct {
 }
 
 func main() {
-	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
-		fmt.Println(appName, version)
-		return
+	if len(os.Args) > 1 {
+		os.Exit(cli(os.Args[1:], os.Stdout, os.Stderr))
 	}
 	cwd, _ := os.Getwd()
 	home, _ := os.UserHomeDir()
@@ -125,6 +125,43 @@ func main() {
 		vx.Close()
 	}()
 	a.run()
+}
+
+// cli handles a command-line option and returns the exit code; cade itself takes no arguments.
+func cli(args []string, out, errOut io.Writer) int {
+	switch args[0] {
+	case "-h", "--help":
+		fmt.Fprint(out, usage())
+	case "-k", "--keys":
+		fmt.Fprint(out, keysMarkdown())
+	case "-v", "--version":
+		fmt.Fprintln(out, appName, version)
+	default:
+		fmt.Fprintf(errOut, "cade: unknown option %q\n\n%s", args[0], usage())
+		return 2
+	}
+	return 0
+}
+
+func usage() string {
+	return appLabel + ` - a terminal ADE for Claude Code sessions.
+
+Usage: cade [option]
+
+With no option, cade opens a sidebar of your projects and their Claude
+sessions; the selected session runs in the right pane. Press ? inside for
+all shortcuts.
+
+Options:
+  -h, --help     show this help
+  -k, --keys     print all keyboard shortcuts as Markdown
+  -v, --version  print the version
+
+Files in ` + filepath.Dir(projectsPath()) + `:
+  projects.json  projects, their order and collapsed state (written by cade)
+  state.json     remembered UI state (written by cade)
+  config.json    theme, e.g. {"theme": "dracula"} (edited by you)
+`
 }
 
 func (a *app) run() {

@@ -74,3 +74,17 @@ func TestHelpAndHintsFromTable(t *testing.T) {
 		t.Fatalf("hidden hints = %v", hidden)
 	}
 }
+
+func TestCLI(t *testing.T) {
+	var out, errOut strings.Builder
+	if code := cli([]string{"--keys"}, &out, &errOut); code != 0 || !strings.Contains(out.String(), "| `d/dd` |") || !strings.Contains(out.String(), "### Claude pane") {
+		t.Fatalf("--keys: code %d\n%s", code, out.String())
+	}
+	out.Reset()
+	if code := cli([]string{"-h"}, &out, &errOut); code != 0 || !strings.Contains(out.String(), "--keys") {
+		t.Fatalf("--help: code %d", code)
+	}
+	if code := cli([]string{"--nope"}, &out, &errOut); code != 2 || !strings.Contains(errOut.String(), "unknown option") {
+		t.Fatalf("unknown: code %d", code)
+	}
+}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
@@ -322,6 +323,23 @@ func helpSections() [][2]string {
 		}
 	}
 	return lines
+}
+
+// keysMarkdown renders helpSections as Markdown tables for cade --keys.
+func keysMarkdown() string {
+	var b strings.Builder
+	for _, l := range helpSections() {
+		if l[0] == "" {
+			if b.Len() > 0 {
+				b.WriteString("\n")
+			}
+			fmt.Fprintf(&b, "### %s\n\n| Key | Action |\n|---|---|\n", l[1])
+			continue
+		}
+		esc := strings.NewReplacer("|", `\|`)
+		fmt.Fprintf(&b, "| `%s` | %s |\n", esc.Replace(l[0]), esc.Replace(l[1]))
+	}
+	return b.String()
 }
 
 // drawHelp overlays the shortcut dialog in the middle of the screen.
