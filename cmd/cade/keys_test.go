@@ -162,4 +162,15 @@ func TestShellToggle(t *testing.T) {
 	if a.active != "s1" {
 		t.Fatalf("F2 again: active %q", a.active)
 	}
+	// with no pane before it, F2 hides the shell to the empty pane, still running
+	a.closeTerm("s1")
+	a.key(f2)
+	a.key(f2)
+	if a.active != "" || a.inTerm || a.terms[shellID+"/a"] == nil {
+		t.Fatalf("hide: active %q inTerm %v", a.active, a.inTerm)
+	}
+	a.key(f2)
+	if a.active != shellID+"/a" {
+		t.Fatalf("show again: active %q", a.active)
+	}
 }

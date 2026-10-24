@@ -355,7 +355,8 @@ func (a *app) show(key string) {
 }
 
 // toggleShell shows a $SHELL in the cursor's project dir over the pane, starting
-// it if needed; on that shell it goes back to the pane shown before.
+// it if needed; on that shell it hides it, still running, back to the pane shown
+// before, or the empty pane if there was none.
 func (a *app) toggleShell() {
 	a.diff = nil
 	p := a.projects[a.current().p]
@@ -363,6 +364,9 @@ func (a *app) toggleShell() {
 	if a.active == key {
 		if a.terms[a.back] != nil {
 			a.show(a.back)
+		} else {
+			a.setFocus(false)
+			a.active = ""
 		}
 		return
 	}
