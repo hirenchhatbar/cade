@@ -172,6 +172,8 @@ func (a *app) sidebarHints() []string {
 	switch {
 	case a.confirm != nil:
 		return append(slices.Clone(a.confirm.lines), confirmHint)
+	case a.search != nil:
+		return grid([][2]string{{"↑/↓", "pick"}, {"⏎", "open"}, {"Esc", "cancel"}}, sideW-1)
 	case a.inTerm:
 		return grid(a.hintPairs(paneKeys, false), sideW-1)
 	default:
@@ -200,10 +202,14 @@ func (a *app) drawSidebar(side vaxis.Window) {
 	if overflow {
 		cw = sideW - 1 // last column is the scrollbar
 	}
-	for i := a.top; i < min(a.top+a.visible, len(rows)); i++ {
-		a.drawRow(tree, i-a.top, rows[i], i == a.cursor, cw)
+	if a.search != nil {
+		a.drawSearch(tree)
+	} else {
+		for i := a.top; i < min(a.top+a.visible, len(rows)); i++ {
+			a.drawRow(tree, i-a.top, rows[i], i == a.cursor, cw)
+		}
 	}
-	if overflow {
+	if overflow && a.search == nil {
 		m := len(rows) - a.visible
 		a.scrollbar(tree, sideW-1, 1, 0, a.visible, m-a.top, m)
 	}
@@ -498,19 +504,62 @@ func (a *app) drawMatch(box vaxis.Window, y, bw int, m fuzzyMatch[string], selec
 	if selected {
 		base, mark = a.th.sel, " › "
 	}
+	segs := append([]vaxis.Segment{{Text: mark, Style: base}}, hitSegs(m.item, m.pos, base)...)
+	segs = append(segs, vaxis.Segment{Text: pad("/", bw-runeLen(mark+m.item)), Style: base})
+	box.PrintTruncate(y, segs...)
+}
+
+// hitSegs draws text in base, the runes at pos bold and underlined.
+func hitSegs(text string, pos []int, base vaxis.Style) []vaxis.Segment {
 	hit := base
 	hit.Attribute |= vaxis.AttrBold
 	hit.UnderlineStyle = vaxis.UnderlineSingle
-	segs := []vaxis.Segment{{Text: mark, Style: base}}
-	for i, r := range []rune(m.item) {
+	var segs []vaxis.Segment
+	for i, r := range []rune(text) {
 		s := base
-		if slices.Contains(m.pos, i) {
+		if slices.Contains(pos, i) {
 			s = hit
 		}
 		segs = append(segs, vaxis.Segment{Text: string(r), Style: s})
 	}
-	segs = append(segs, vaxis.Segment{Text: pad("/", bw-runeLen(mark+m.item)), Style: base})
-	box.PrintTruncate(y, segs...)
+	return segs
+}
+
+// drawSearch draws the / query line and, below it, the matching sessions with
+// their project names, in place of the tree.
+func (a *app) drawSearch(win vaxis.Window) {
+	th := a.th
+	sr := a.search
+	win.PrintTruncate(0,
+		vaxis.Segment{Text: " / ", Style: th.key},
+		vaxis.Segment{Text: truncateLeft(sr.query, sideW-5), Style: th.base},
+		vaxis.Segment{Text: "▏", Style: th.key})
+	hits := a.searchHits()
+	if len(hits) == 0 {
+		win.PrintTruncate(2, vaxis.Segment{Text: "   no matching sessions", Style: th.muted})
+		return
+	}
+	sel := max(min(sr.sel, len(hits)-1), 0)
+	listH := max(a.visible-2, 1) // query, blank
+	top := max(sel-listH+1, 0)
+	for i := top; i < min(len(hits), top+listH); i++ {
+		h := hits[i]
+		base, mark := th.base, "   "
+		if i == sel {
+			base, mark = th.sel, " › "
+		}
+		proj := truncate(a.projects[h.item.p].Name, sideW/3) + " "
+		title := truncate(a.projects[h.item.p].sessions[h.item.s].Title, sideW-runeLen(mark+proj)-2)
+		muted := th.muted
+		if i == sel {
+			muted = th.sel
+		}
+		segs := append([]vaxis.Segment{{Text: mark, Style: base}}, hitSegs(title, h.pos, base)...)
+		segs = append(segs,
+			vaxis.Segment{Text: pad("", sideW-runeLen(mark+title+proj)), Style: base},
+			vaxis.Segment{Text: proj, Style: muted})
+		win.PrintTruncate(2+i-top, segs...)
+	}
 }
 
 // activeTitle names the open session for the pane's title bar.

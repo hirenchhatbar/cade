@@ -42,6 +42,8 @@ var sidebarKeys = []binding{
 		idle: "open selected session", run: (*app).open},
 	{label: "n", keys: []string{"n"}, hint: "new session", help: "new session in this project", idle: "new session",
 		run: (*app).newSession},
+	{label: "/", keys: []string{"/"}, hint: "search", help: "fuzzy search session titles, all projects",
+		run: func(a *app) { a.search = &searching{} }},
 	{label: "←/→", keys: []string{"Left"}, hint: "fold", help: "collapse / expand project",
 		run: func(a *app) { a.foldSaved(true) }},
 	{keys: []string{"Right"}, run: func(a *app) { a.foldSaved(false) }},
@@ -107,7 +109,7 @@ func (a *app) match(bs []binding, k vaxis.Key) *binding {
 func (a *app) key(k vaxis.Key) bool {
 	release := k.EventType == vaxis.EventRelease
 	// prompts and help keep Esc for cancel
-	if b := a.match(paneKeys[:1], k); b != nil && (a.inTerm || !a.help && a.confirm == nil && a.input == nil && a.rename == nil) {
+	if b := a.match(paneKeys[:1], k); b != nil && (a.inTerm || !a.help && a.confirm == nil && a.input == nil && a.rename == nil && a.search == nil) {
 		if !release {
 			b.run(a)
 		}
@@ -133,6 +135,8 @@ func (a *app) key(k vaxis.Key) bool {
 		a.promptKey(k)
 	case a.rename != nil:
 		a.renameKey(k)
+	case a.search != nil:
+		a.searchKey(k)
 	default:
 		a.msg = "" // errors last until the next key
 		if !k.MatchString("d") {
@@ -211,6 +215,9 @@ func (a *app) mouse(ev vaxis.Mouse) {
 }
 
 func (a *app) sidebarMouse(ev vaxis.Mouse, drag bool) {
+	if a.search != nil { // the tree is hidden behind the hits
+		return
+	}
 	rows := a.rows()
 	r := ev.Row - titleH
 	switch {
@@ -442,4 +449,42 @@ func (a *app) toggleStar() {
 	}
 	a.save()
 	a.refresh()
+}
+
+// searchHits lists every session whose title fuzzy-matches the query, best first;
+// collapsed projects are searched too.
+func (a *app) searchHits() []fuzzyMatch[row] {
+	var all []row
+	for pi, p := range a.projects {
+		for si := range p.sessions {
+			all = append(all, row{pi, si})
+		}
+	}
+	return fuzzyFilter(a.search.query, all, func(r row) string { return a.projects[r.p].sessions[r.s].Title })
+}
+
+// searchKey edits the search; drawSearch renders it. Enter opens the highlighted hit.
+func (a *app) searchKey(k vaxis.Key) {
+	sr := a.search
+	hits := a.searchHits()
+	sr.sel = max(min(sr.sel, len(hits)-1), 0)
+	switch {
+	case k.MatchString("Escape"):
+		a.search = nil
+	case k.MatchString("Down") || k.MatchString("Ctrl+n"):
+		sr.sel = max(min(sr.sel+1, len(hits)-1), 0)
+	case k.MatchString("Up") || k.MatchString("Ctrl+p"):
+		sr.sel = max(sr.sel-1, 0)
+	case k.MatchString("Enter"):
+		if len(hits) == 0 {
+			return
+		}
+		r := hits[sr.sel].item
+		a.search = nil
+		a.projects[r.p].Collapsed = false
+		a.cursor = slices.Index(a.rows(), r)
+		a.open()
+	case typeKey(&sr.query, k):
+		sr.sel = 0
+	}
 }

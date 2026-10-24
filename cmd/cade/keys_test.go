@@ -88,3 +88,36 @@ func TestCLI(t *testing.T) {
 		t.Fatalf("unknown: code %d", code)
 	}
 }
+
+func TestSearchKeys(t *testing.T) {
+	a := &app{tree: tree{projects: []*project{
+		{Name: "a", Dir: "/a", sessions: []session{{ID: "s1", Title: "fix login"}, {ID: "s2", Title: "docs"}}},
+		{Name: "b", Dir: "/b", Collapsed: true, sessions: []session{{ID: "s3", Title: "refactor logger"}}},
+	}}}
+	typ := func(s string) {
+		for _, r := range s {
+			a.key(vaxis.Key{Keycode: r, Text: string(r)})
+		}
+	}
+	typ("/log")
+	if a.search == nil || a.search.query != "log" {
+		t.Fatalf("search = %+v", a.search)
+	}
+	hits := a.searchHits()
+	if len(hits) != 2 || hits[0].item != (row{0, 0}) || hits[1].item != (row{1, 0}) {
+		t.Fatalf("hits = %+v", hits) // collapsed project b is searched too
+	}
+	a.key(vaxis.Key{Keycode: vaxis.KeyDown})
+	a.key(vaxis.Key{Keycode: vaxis.KeyDown})
+	if a.search.sel != 1 {
+		t.Fatalf("sel = %d, want clamped to 1", a.search.sel)
+	}
+	typ("j") // typed, not a cursor move
+	if a.search.query != "logj" || a.cursor != 0 {
+		t.Fatalf("query %q cursor %d", a.search.query, a.cursor)
+	}
+	a.key(vaxis.Key{Keycode: vaxis.KeyEsc})
+	if a.search != nil {
+		t.Fatal("Esc should close search")
+	}
+}

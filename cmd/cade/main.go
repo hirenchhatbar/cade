@@ -54,6 +54,12 @@ type prompt struct {
 	subs      []string // nil = not read yet
 }
 
+// searching is the / search: a flat list of sessions whose titles fuzzy-match query.
+type searching struct {
+	query string
+	sel   int // highlighted hit
+}
+
 // renaming is the rename-session dialog.
 type renaming struct {
 	p     *project
@@ -84,6 +90,7 @@ type app struct {
 	// transient UI state
 	input   *prompt       // non-nil while adding a project
 	rename  *renaming     // non-nil while renaming a session
+	search  *searching    // non-nil while searching sessions
 	confirm *confirmation // non-nil while asking yes/no
 	help    bool          // shortcut dialog open
 	msg     string        // last error, shown above the hints
