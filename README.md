@@ -1,5 +1,14 @@
 # cade
 
+```
+ ██████╗ █████╗ ██████╗ ███████╗
+██╔════╝██╔══██╗██╔══██╗██╔════╝
+██║     ███████║██║  ██║█████╗
+██║     ██╔══██║██║  ██║██╔══╝
+╚██████╗██║  ██║██████╔╝███████╗
+ ╚═════╝╚═╝  ╚═╝╚═════╝ ╚══════╝
+```
+
 A small terminal ADE for [Claude Code](https://claude.com/claude-code). The left sidebar lists your
 projects and their Claude sessions as a tree; the right pane runs the real `claude` CLI for the
 selected session. cade is only a wrapper: every key, paste and mouse event in the Claude pane goes
@@ -68,7 +77,8 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 
 | Key | Action |
 |---|---|
-| `Ctrl+Esc` | switch sidebar ↔ pane (also F12) |
+| `Esc` | switch sidebar ↔ pane (also F12) |
+| `Ctrl+Esc` | send Esc to Claude (interrupt) |
 | `⇧PgUp/Dn` | scroll back / forward (PgUp/PgDn too) |
 | `wheel` | scroll; or drag the scrollbar |
 | `drag` | select text, 2×click word, 3×click line → copied |
@@ -151,4 +161,4 @@ scrollbar. To upgrade Vaxis, copy the new release into `third_party/vaxis` and k
   misalign a row.
 - If you switch sessions inside a pane with `/resume` or `/clear`, the sidebar still shows the
   session the pane was opened with.
-- `Ctrl+Esc` needs the kitty keyboard protocol; without it use `F12`.
+- `Ctrl+Esc` needs the kitty keyboard protocol; without it Claude cannot get an Esc.

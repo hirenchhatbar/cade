@@ -67,6 +67,8 @@ var sidebarKeys = []binding{
 var paneKeys = []binding{
 	{label: focusLbl, keys: []string{focusKey, focusAlt}, hint: "sidebar", help: "switch sidebar ↔ pane (also " + focusAlt + ")",
 		when: hasPane, run: func(a *app) { a.setFocus(!a.inTerm) }},
+	{label: escLbl, keys: []string{escKey}, help: "send Esc to Claude (interrupt)",
+		run: func(a *app) { a.terms[a.active].Update(vaxis.Key{Keycode: vaxis.KeyEsc}) }},
 	{label: "⇧PgUp/Dn", keys: []string{"Page_Up", "Shift+Page_Up"}, hint: "scroll", help: "scroll back / forward (PgUp/PgDn too)",
 		when: hasScrollback, run: func(a *app) { a.pageScroll(1) }},
 	{keys: []string{"Page_Down", "Shift+Page_Down"}, when: hasScrollback, run: func(a *app) { a.pageScroll(-1) }},
@@ -98,7 +100,8 @@ func (a *app) match(bs []binding, k vaxis.Key) *binding {
 // key routes a key press; it reports whether cade should quit.
 func (a *app) key(k vaxis.Key) bool {
 	release := k.EventType == vaxis.EventRelease
-	if b := a.match(paneKeys[:1], k); b != nil {
+	// prompts and help keep Esc for cancel
+	if b := a.match(paneKeys[:1], k); b != nil && (a.inTerm || !a.help && a.confirm == nil && a.input == nil) {
 		if !release {
 			b.run(a)
 		}

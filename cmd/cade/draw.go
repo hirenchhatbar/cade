@@ -289,23 +289,53 @@ func (a *app) drawPane(win vaxis.Window, w, h int) {
 	}
 }
 
-// drawIdle centers the bindings that have an empty-pane prompt.
+// drawIdle centers the logo, version and the bindings that have an empty-pane prompt.
+// The logo is left out when the pane is too small for it.
 func (a *app) drawIdle(pane vaxis.Window) {
-	var lines []string
+	var hints []string
 	for _, b := range sidebarKeys {
 		if b.idle != "" {
-			lines = append(lines, "["+b.label+"] "+b.idle)
+			hints = append(hints, "["+b.label+"] "+b.idle)
 		}
 	}
-	bw := 0
-	for _, l := range lines {
-		bw = max(bw, runeLen(l))
-	}
+	logoLines := strings.Split(logo, "\n")
 	pw, ph := pane.Size()
-	block := pane.New(max((pw-bw)/2, 0), max((ph-len(lines))/2, 0), min(bw+1, pw), len(lines))
-	for i, l := range lines {
-		block.PrintTruncate(i, a.hintSegs(l)...)
+	total := len(hints)
+	showLogo := pw >= blockW(logoLines) && ph >= total+len(logoLines)+2
+	if showLogo {
+		total += len(logoLines) + 2 // + version, blank
 	}
+	y := max((ph-total)/2, 0)
+	// put prints lines as a left-aligned block centered in the pane, from row y down.
+	put := func(lines []string, segs func(i int, l string) []vaxis.Segment) {
+		bw := blockW(lines)
+		block := pane.New(max((pw-bw)/2, 0), y, min(bw+1, pw), len(lines))
+		for i, l := range lines {
+			block.PrintTruncate(i, segs(i, l)...)
+		}
+		y += len(lines)
+	}
+	if showLogo {
+		th := a.th
+		colors := []vaxis.Style{th.key, th.project, th.running, th.err, th.base, th.muted}
+		put(logoLines, func(i int, l string) []vaxis.Segment {
+			return []vaxis.Segment{{Text: l, Style: colors[i%len(colors)]}}
+		})
+		put([]string{"v" + version}, func(_ int, l string) []vaxis.Segment {
+			return []vaxis.Segment{{Text: l, Style: th.muted}}
+		})
+		y++
+	}
+	put(hints, func(_ int, l string) []vaxis.Segment { return a.hintSegs(l) })
+}
+
+// blockW is the width of the widest line.
+func blockW(lines []string) int {
+	w := 0
+	for _, l := range lines {
+		w = max(w, runeLen(l))
+	}
+	return w
 }
 
 // helpSections builds the ? dialog from the binding tables.

@@ -81,7 +81,7 @@ func TestCLI(t *testing.T) {
 		t.Fatalf("--keys: code %d\n%s", code, out.String())
 	}
 	out.Reset()
-	if code := cli([]string{"-h"}, &out, &errOut); code != 0 || !strings.Contains(out.String(), "--keys") {
+	if code := cli([]string{"-h"}, &out, &errOut); code != 0 || !strings.Contains(out.String(), "--keys") || !strings.HasPrefix(out.String(), logo) {
 		t.Fatalf("--help: code %d", code)
 	}
 	if code := cli([]string{"--nope"}, &out, &errOut); code != 2 || !strings.Contains(errOut.String(), "unknown option") {

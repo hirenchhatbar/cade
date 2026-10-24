@@ -18,11 +18,13 @@ const (
 	version  = "0.1.0"
 	appLabel = appName + " v" + version
 	sideW    = 40
-	barW     = 2             // scrollbar columns
-	focusKey = "Ctrl+Escape" // shortcut: hardcoded, make configurable once the key choice settles
-	focusLbl = "Ctrl+Esc"
-	// Ctrl+Esc needs the kitty keyboard protocol; legacy terminals send plain Esc, so F12 stays as fallback.
-	focusAlt  = "F12"
+	barW     = 2        // scrollbar columns
+	focusKey = "Escape" // shortcut: hardcoded, make configurable once the key choice settles
+	focusLbl = "Esc"
+	focusAlt = "F12"
+	// Esc leaves the pane, so Ctrl+Esc sends Claude its Esc; it needs the kitty keyboard protocol.
+	escKey    = "Ctrl+Escape"
+	escLbl    = "Ctrl+Esc"
 	newRowLbl = "[n] new session"
 	selLinger = 600 * time.Millisecond // selection stays highlighted this long after a copy
 	ddWindow  = 400 * time.Millisecond // a second d within this means dd
@@ -143,8 +145,16 @@ func cli(args []string, out, errOut io.Writer) int {
 	return 0
 }
 
+// logo is the app name in block letters, shown in the idle pane and --help.
+const logo = ` ██████╗ █████╗ ██████╗ ███████╗
+██╔════╝██╔══██╗██╔══██╗██╔════╝
+██║     ███████║██║  ██║█████╗
+██║     ██╔══██║██║  ██║██╔══╝
+╚██████╗██║  ██║██████╔╝███████╗
+ ╚═════╝╚═╝  ╚═╝╚═════╝ ╚══════╝`
+
 func usage() string {
-	return appLabel + ` - a terminal ADE for Claude Code sessions.
+	return logo + "\n\n" + appLabel + ` - a terminal ADE for Claude Code sessions.
 
 Usage: cade [option]
 
