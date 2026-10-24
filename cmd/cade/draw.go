@@ -261,10 +261,10 @@ func (a *app) drawRow(win vaxis.Window, y int, r row, selected bool, cw int) {
 	if r.s == len(p.sessions)-1 || (r.s == rowNew && len(p.sessions) == 0) {
 		branch = "   └─ "
 	}
-	label, id, mark, star, labelStyle := newRowLbl, "", "  ", "", th.key
+	label, mark, star, labelStyle := newRowLbl, "  ", "", th.key
 	if r.s >= 0 {
 		s := p.sessions[r.s]
-		label, id, star, labelStyle = s.Title, " ("+s.short()+")", "  ", th.base
+		label, star, labelStyle = s.Title, "  ", th.base
 		if a.terms[s.ID] != nil {
 			mark = "● "
 		}
@@ -272,14 +272,12 @@ func (a *app) drawRow(win vaxis.Window, y int, r row, selected bool, cw int) {
 			star = "★ "
 		}
 	}
-	room := cw - runeLen(branch+mark+star) - runeLen(id)
-	text := truncate(label, room)
+	room := cw - runeLen(branch+mark+star)
 	win.PrintTruncate(y,
 		vaxis.Segment{Text: branch, Style: hl(th.muted)},
 		vaxis.Segment{Text: mark, Style: hl(th.running)},
 		vaxis.Segment{Text: star, Style: hl(th.key)},
-		vaxis.Segment{Text: text, Style: hl(labelStyle)},
-		vaxis.Segment{Text: pad(id, room-runeLen(text)+runeLen(id)), Style: hl(th.muted)})
+		vaxis.Segment{Text: pad(truncate(label, room), room), Style: hl(labelStyle)})
 }
 
 func (a *app) drawPane(win vaxis.Window, w, h int) {
