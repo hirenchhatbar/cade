@@ -27,6 +27,11 @@ const (
 	// Esc leaves the pane, so Ctrl+Esc sends Claude its Esc; it needs the kitty keyboard protocol.
 	escKey    = "Ctrl+Escape"
 	escLbl    = "Ctrl+Esc"
+	diffKey   = "F3"
+	shellKey  = "F2"
+	waitKey   = "Ctrl+f"
+	waitLbl   = "Ctrl+F"
+	shellID   = "shell:" // + project dir: the project's shell in terms
 	newRowLbl = "[n] new session"
 	selLinger = 600 * time.Millisecond // selection stays highlighted this long after a copy
 	ddWindow  = 400 * time.Millisecond // a second d within this means dd
@@ -101,6 +106,7 @@ type app struct {
 	pending map[string]bool // started from cade, jsonl may not exist yet
 	terms   map[string]*term.Model
 	active  string   // key into terms
+	back    string   // pane shown before the shell, which F2 returns to
 	inTerm  bool     // keyboard focus on the Claude pane
 	attn    []string // sessions that rang for attention, oldest first
 
@@ -110,6 +116,7 @@ type app struct {
 	search  *searching    // non-nil while searching sessions
 	confirm *confirmation // non-nil while asking yes/no
 	set     *settings     // non-nil while the settings dialog is open
+	diff    *diffView     // non-nil while the git diff covers the pane
 	help    bool          // shortcut dialog open
 	msg     string        // last error, shown above the hints
 	dWait   bool          // a first d was pressed, see ddWindow
@@ -252,6 +259,11 @@ func (a *app) handle(ev vaxis.Event) bool {
 		a.mouse(ev)
 	case refreshEvent:
 		a.refresh()
+		if a.diff != nil {
+			a.loadDiff()
+		}
+	case diffEvent:
+		a.showDiff(ev)
 	case clearSel:
 		if ev.seq == a.selSeq {
 			ev.t.ClearSelection()
@@ -302,6 +314,7 @@ func (a *app) save() { a.fail("save failed: ", saveProjects(a.cfgPath, a.project
 // open switches to the selected session's terminal, starting claude if needed.
 // On a header or new-session row it starts a new session in that project.
 func (a *app) open() {
+	a.diff = nil
 	cur := a.current()
 	p := a.projects[cur.p]
 	var key string
@@ -329,11 +342,45 @@ func (a *app) open() {
 		}
 		a.terms[key] = t
 	}
+	a.show(key)
+}
+
+// show puts terms[key] in the pane and focuses it.
+func (a *app) show(key string) {
 	if prev := a.terms[a.active]; prev != nil && a.active != key {
 		prev.Blur()
 	}
 	a.active = key
 	a.setFocus(true)
+}
+
+// toggleShell shows a $SHELL in the cursor's project dir over the pane, starting
+// it if needed; on that shell it goes back to the pane shown before.
+func (a *app) toggleShell() {
+	a.diff = nil
+	p := a.projects[a.current().p]
+	key := shellID + p.Dir
+	if a.active == key {
+		if a.terms[a.back] != nil {
+			a.show(a.back)
+		}
+		return
+	}
+	if _, ok := a.terms[key]; !ok {
+		t := term.New(term.WithVaxis(a.vx))
+		t.Attach(func(ev vaxis.Event) { a.vx.PostEvent(termEvent{key, ev}) })
+		cmd := exec.Command(cmp.Or(os.Getenv("SHELL"), "sh"))
+		cmd.Dir = p.Dir
+		cmd.Env = append(os.Environ(), "PWD="+p.Dir)
+		w, h := a.paneSize()
+		if err := t.StartWithSize(cmd, w, h); err != nil {
+			a.fail("shell: ", err)
+			return
+		}
+		a.terms[key] = t
+	}
+	a.back = a.active
+	a.show(key)
 }
 
 // refresh reloads every project's sessions from disk and keeps the cursor on the same row.
@@ -366,6 +413,7 @@ func (a *app) removeProject(p *project) {
 	for _, s := range p.sessions {
 		a.closeTerm(s.ID)
 	}
+	a.closeTerm(shellID + p.Dir)
 	a.projects = slices.DeleteFunc(a.projects, func(q *project) bool { return q == p })
 	a.save()
 	a.restore(rowKey{})

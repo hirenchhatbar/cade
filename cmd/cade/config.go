@@ -26,6 +26,9 @@ type config struct {
 		Default  string             `yaml:"default"` // may be left out when there is one account
 		Accounts map[string]account `yaml:"accounts"`
 	} `yaml:"claude"`
+	Diff struct {
+		Wrap *bool `yaml:"wrap"` // long lines wrap in the F3 diff; false cuts them with …. Default: true
+	} `yaml:"diff"`
 }
 
 // account is one Claude login: how claude is started and where it keeps sessions.

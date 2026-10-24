@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"go.rockorager.dev/vaxis"
+	"go.rockorager.dev/vaxis/widgets/term"
 )
 
 // Every shown binding needs text for the places it appears in.
@@ -142,8 +143,23 @@ func TestAttention(t *testing.T) {
 		t.Fatalf("focusing should clear the active session: %v", a.attn)
 	}
 	a.attn = []string{"gone"}
-	a.focusWaiting()
+	a.key(vaxis.Key{Keycode: 'f', Modifiers: vaxis.ModCtrl})
 	if len(a.attn) != 0 || a.msg == "" {
 		t.Fatalf("missing sessions should drop out: attn %v msg %q", a.attn, a.msg)
+	}
+}
+
+// F2 puts the project's shell over the session pane, and F2 again goes back.
+func TestShellToggle(t *testing.T) {
+	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}},
+		terms: map[string]*term.Model{"s1": term.New(), shellID + "/a": term.New()}, active: "s1", inTerm: true}
+	f2 := vaxis.Key{Keycode: vaxis.KeyF02}
+	a.key(f2)
+	if a.active != shellID+"/a" || !a.inTerm {
+		t.Fatalf("F2: active %q inTerm %v", a.active, a.inTerm)
+	}
+	a.key(f2)
+	if a.active != "s1" {
+		t.Fatalf("F2 again: active %q", a.active)
 	}
 }

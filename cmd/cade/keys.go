@@ -42,8 +42,6 @@ var sidebarKeys = []binding{
 		idle: "open selected session", run: (*app).open},
 	{label: "n", keys: []string{"n"}, hint: "new session", help: "new session in this project", idle: "new session",
 		run: (*app).newSession},
-	{label: "f", keys: []string{"f"}, hint: "waiting", show: func(a *app) bool { return len(a.attn) > 0 },
-		help: "focus next waiting session (◆), oldest first", run: (*app).focusWaiting},
 	{label: "/", keys: []string{"/"}, hint: "search", help: "fuzzy search session titles, all projects",
 		run: func(a *app) { a.search = &searching{} }},
 	{label: "←/→", keys: []string{"Left"}, hint: "fold", help: "collapse / expand project",
@@ -75,10 +73,18 @@ var sidebarKeys = []binding{
 }
 
 // paneKeys apply while the Claude pane has focus; everything else goes to Claude.
-// The focus key is checked first, in any focus state.
+// The focus, diff, shell and waiting keys are checked first, in any focus state.
 var paneKeys = []binding{
 	{label: focusLbl, keys: []string{focusKey, focusAlt}, hint: "sidebar", help: "switch sidebar ↔ pane (also " + focusAlt + ")",
 		when: hasPane, run: func(a *app) { a.setFocus(!a.inTerm) }},
+	{label: diffKey, keys: []string{diffKey}, hint: "git diff",
+		help: "git diff of the session's project, sidebar too; s: side by side ↔ unified",
+		run:  (*app).openDiff},
+	{label: shellKey, keys: []string{shellKey}, hint: "shell",
+		help: "shell in the project's directory over the pane, sidebar too; again goes back",
+		run:  (*app).toggleShell},
+	{label: waitLbl, keys: []string{waitKey}, hint: "waiting", show: func(a *app) bool { return len(a.attn) > 0 },
+		help: "focus next waiting session (◆), oldest first, sidebar too", run: (*app).focusWaiting},
 	{label: escLbl, keys: []string{escKey}, help: "send Esc to Claude (interrupt)",
 		run: func(a *app) { a.terms[a.active].Update(vaxis.Key{Keycode: vaxis.KeyEsc}) }},
 	{label: "⇧PgUp/Dn", keys: []string{"Page_Up", "Shift+Page_Up"}, hint: "scroll", help: "scroll back / forward (PgUp/PgDn too)",
@@ -120,8 +126,14 @@ func (a *app) match(bs []binding, k vaxis.Key) *binding {
 // key routes a key press; it reports whether cade should quit.
 func (a *app) key(k vaxis.Key) bool {
 	release := k.EventType == vaxis.EventRelease
+	if a.diff != nil {
+		if !release {
+			a.diffKey(k)
+		}
+		return false
+	}
 	// prompts and help keep Esc for cancel
-	if b := a.match(paneKeys[:1], k); b != nil && (a.inTerm || !a.help && a.confirm == nil && a.input == nil && a.rename == nil && a.search == nil && a.set == nil) {
+	if b := a.match(paneKeys[:4], k); b != nil && (a.inTerm || !a.help && a.confirm == nil && a.input == nil && a.rename == nil && a.search == nil && a.set == nil) {
 		if !release {
 			b.run(a)
 		}
@@ -214,6 +226,12 @@ func (a *app) mouse(ev vaxis.Mouse) {
 	w, h := a.vx.Window().Size()
 	drag := ev.Button == vaxis.MouseLeftButton && ev.EventType != vaxis.EventRelease
 	switch {
+	case a.diff != nil && ev.Col > sideW: // the diff covers the pane
+		if ev.Button == vaxis.MouseWheelUp {
+			a.diff.pg.Offset = max(a.diff.pg.Offset-3, 0)
+		} else if ev.Button == vaxis.MouseWheelDown {
+			a.diff.pg.Offset += 3
+		}
 	case t != nil && ev.Col >= w-barW: // pane scrollbar
 		if drag {
 			_, m := t.ScrollInfo()

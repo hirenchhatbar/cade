@@ -64,7 +64,6 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `⇧↑/⇧↓` | previous / next project |
 | `l/⏎` | open session (click works too; new one on a project row) |
 | `n` | new session in this project |
-| `f` | focus next waiting session (◆), oldest first |
 | `/` | fuzzy search session titles, all projects |
 | `←/→` | collapse / expand project |
 | `a` | add project (name, then directory; ⇥ opens a match) |
@@ -84,6 +83,9 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | Key | Action |
 |---|---|
 | `Esc` | switch sidebar ↔ pane (also F12) |
+| `F3` | git diff of the session's project, sidebar too; s: side by side ↔ unified |
+| `F2` | shell in the project's directory over the pane, sidebar too; again goes back |
+| `Ctrl+F` | focus next waiting session (◆), oldest first, sidebar too |
 | `Ctrl+Esc` | send Esc to Claude (interrupt) |
 | `⇧PgUp/Dn` | scroll back / forward (PgUp/PgDn too) |
 | `wheel` | scroll; or drag the scrollbar |
@@ -99,8 +101,8 @@ your terminal must allow clipboard writes from programs. If Claude turns on mous
 When a session other than the one you're typing in needs you (Claude rings the bell on a
 permission prompt or when it waits for input), cade rings your terminal's bell, sends a desktop
 notification, marks the session `◆` with its title in bold, and counts waiting sessions in the
-pane's title bar. `f` opens the one that has waited longest; press it again for the next. From the
-Claude pane that is `Esc` `f`. cade starts Claude with
+pane's title bar. `Ctrl+F` opens the one that has waited longest, from the sidebar or the Claude
+pane; press it again for the next. cade starts Claude with
 `--settings '{"preferredNotifChannel":"terminal_bell"}'` for this.
 
 ## Configuration
@@ -111,8 +113,8 @@ All files live in `~/.config/cade/` (`$XDG_CONFIG_HOME/cade/` if set; on macOS
 | File | Written by | Contents |
 |---|---|---|
 | `projects.json` | cade | projects, their order and collapsed state, session titles and stars |
-| `state.json` | cade | remembered UI state (hints hidden) |
-| `config.yaml` | you (cade writes only `theme`) | theme, Claude accounts |
+| `state.json` | cade | remembered UI state (hints hidden, diff side by side or unified) |
+| `config.yaml` | you (cade writes only `theme`) | theme, diff, Claude accounts |
 
 ### Themes
 
@@ -133,6 +135,17 @@ themes:
 Colour fields, as `#rrggbb`: `bg`, `fg`, `muted`, `project`, `selBg`, `selFg`, `key`, `running`,
 `attention`, `thumb`, `error`, `titleBg`, `titleFg`. A bad config falls back to Dracula and shows the error in
 the sidebar. The config is read at startup.
+
+### Diff
+
+`F3` shows `git diff` of the session's project over the Claude pane, side by side; `s` switches to
+unified and back, and cade remembers the choice. It reloads every 2 seconds and keeps your scroll
+position. Long lines wrap inside their column; to cut them with `…` instead:
+
+```yaml
+diff:
+  wrap: false
+```
 
 ### Settings dialog
 

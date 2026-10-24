@@ -296,7 +296,16 @@ func (a *app) drawPane(win vaxis.Window, w, h int) {
 	t := a.terms[a.active]
 	waiting := ""
 	if len(a.attn) > 0 {
-		waiting = fmt.Sprintf("◆ %d waiting [f] ", len(a.attn))
+		waiting = fmt.Sprintf("◆ %d waiting ["+waitLbl+"] ", len(a.attn))
+	}
+	if a.diff != nil {
+		mode := "unified"
+		if a.st.UnifiedDiff {
+			mode = "side by side"
+		}
+		a.titleBar(title, " DIFF › "+a.diff.name, waiting+"[s] "+mode+"  [Esc] close ", true)
+		a.drawDiff(win.New(sideW+1, titleH, w-sideW-1, h-titleH))
+		return
 	}
 	if t == nil {
 		a.titleBar(title, " CLAUDE", waiting, false)
@@ -577,6 +586,9 @@ func (a *app) drawSearch(win vaxis.Window) {
 
 // titleOf names session id for the pane's title bar and notifications.
 func (a *app) titleOf(id string) string {
+	if dir, ok := strings.CutPrefix(id, shellID); ok {
+		return "SHELL › " + a.short(dir)
+	}
 	for _, p := range a.projects {
 		for _, s := range p.sessions {
 			if s.ID == id {
