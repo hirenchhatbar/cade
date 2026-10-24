@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -32,5 +33,22 @@ func TestExpandDir(t *testing.T) {
 		if _, err := expandDir(bad, home); err == nil {
 			t.Errorf("%q: want error", bad)
 		}
+	}
+}
+
+func TestArrange(t *testing.T) {
+	p := &project{Titles: map[string]string{"b": "mine"}, Starred: []string{"d", "b"},
+		sessions: []session{{ID: "a", Title: "A"}, {ID: "b", Title: "B"}, {ID: "c", Title: "C"}, {ID: "d", Title: "D"}}}
+	p.arrange()
+	var got []string
+	for _, s := range p.sessions {
+		got = append(got, s.ID+"="+s.Title)
+	}
+	if want := "b=mine d=D a=A c=C"; strings.Join(got, " ") != want {
+		t.Fatalf("got %v want %s", got, want)
+	}
+	p.forget("b")
+	if len(p.Titles) != 0 || len(p.Starred) != 1 {
+		t.Fatalf("forget left %v %v", p.Titles, p.Starred)
 	}
 }

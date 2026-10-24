@@ -163,6 +163,7 @@ func (a *app) draw() {
 	a.drawPane(win, w, h)
 	a.drawHelp(win)
 	a.drawAdd(win)
+	a.drawRename(win)
 	a.vx.Render()
 }
 
@@ -218,6 +219,9 @@ func (a *app) drawSidebar(side vaxis.Window) {
 	}
 }
 
+// starX is the column of a session row's star: after "   ├─ " and the running mark.
+const starX = 8
+
 // drawRow draws one tree row at line y, cw columns wide.
 func (a *app) drawRow(win vaxis.Window, y int, r row, selected bool, cw int) {
 	th := a.th
@@ -251,19 +255,23 @@ func (a *app) drawRow(win vaxis.Window, y int, r row, selected bool, cw int) {
 	if r.s == len(p.sessions)-1 || (r.s == rowNew && len(p.sessions) == 0) {
 		branch = "   └─ "
 	}
-	label, id, mark, labelStyle := newRowLbl, "", "  ", th.key
+	label, id, mark, star, labelStyle := newRowLbl, "", "  ", "", th.key
 	if r.s >= 0 {
 		s := p.sessions[r.s]
-		label, id, labelStyle = s.Title, " ("+s.short()+")", th.base
+		label, id, star, labelStyle = s.Title, " ("+s.short()+")", "  ", th.base
 		if a.terms[s.ID] != nil {
 			mark = "● "
 		}
+		if slices.Contains(p.Starred, s.ID) {
+			star = "★ "
+		}
 	}
-	room := cw - runeLen(branch+mark) - runeLen(id)
+	room := cw - runeLen(branch+mark+star) - runeLen(id)
 	text := truncate(label, room)
 	win.PrintTruncate(y,
 		vaxis.Segment{Text: branch, Style: hl(th.muted)},
 		vaxis.Segment{Text: mark, Style: hl(th.running)},
+		vaxis.Segment{Text: star, Style: hl(th.key)},
 		vaxis.Segment{Text: text, Style: hl(labelStyle)},
 		vaxis.Segment{Text: pad(id, room-runeLen(text)+runeLen(id)), Style: hl(th.muted)})
 }
@@ -465,6 +473,23 @@ func (a *app) drawAdd(win vaxis.Window) {
 		box.PrintTruncate(bh-2, vaxis.Segment{Text: " ✗ " + in.err, Style: on(th.err)})
 	}
 	box.PrintTruncate(bh-1, append([]vaxis.Segment{{Text: " ", Style: th.muted}}, a.hintSegs(hint)...)...)
+}
+
+// drawRename overlays the rename-session dialog.
+func (a *app) drawRename(win vaxis.Window) {
+	rn := a.rename
+	if rn == nil {
+		return
+	}
+	th := a.th
+	box, on := a.dialog(win, " RENAME SESSION", 84, titleH+4)
+	bw, bh := box.Size()
+	box.PrintTruncate(titleH+1,
+		vaxis.Segment{Text: " Title: ", Style: on(th.key)},
+		vaxis.Segment{Text: truncateLeft(rn.title, bw-10), Style: on(th.base)},
+		vaxis.Segment{Text: "▏", Style: on(th.key)})
+	box.PrintTruncate(bh-1, append([]vaxis.Segment{{Text: " ", Style: th.muted}},
+		a.hintSegs("[⏎] save (empty = Claude's title)  [Esc] cancel")...)...)
 }
 
 // drawMatch draws one directory row, the fuzzy-matched letters bold and underlined.

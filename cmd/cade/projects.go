@@ -5,14 +5,40 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
 type project struct {
-	Name      string    `json:"name"`
-	Dir       string    `json:"dir"`
-	Collapsed bool      `json:"collapsed,omitempty"`
-	sessions  []session // loaded from ~/.claude/projects, not persisted
+	Name      string            `json:"name"`
+	Dir       string            `json:"dir"`
+	Collapsed bool              `json:"collapsed,omitempty"`
+	Titles    map[string]string `json:"titles,omitempty"`  // session ID -> title set in cade, wins over Claude's
+	Starred   []string          `json:"starred,omitempty"` // starred session IDs, listed first
+	sessions  []session         // loaded from ~/.claude/projects, not persisted
+}
+
+// arrange applies cade's titles and moves starred sessions to the top,
+// keeping the shown order within both groups.
+func (p *project) arrange() {
+	var starred, rest []session
+	for _, s := range p.sessions {
+		if t := p.Titles[s.ID]; t != "" {
+			s.Title = t
+		}
+		if slices.Contains(p.Starred, s.ID) {
+			starred = append(starred, s)
+		} else {
+			rest = append(rest, s)
+		}
+	}
+	p.sessions = append(starred, rest...)
+}
+
+// forget drops cade's title and star for a deleted session.
+func (p *project) forget(id string) {
+	delete(p.Titles, id)
+	p.Starred = slices.DeleteFunc(p.Starred, func(s string) bool { return s == id })
 }
 
 func projectsPath() string {

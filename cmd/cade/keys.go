@@ -3,6 +3,7 @@ package main
 import (
 	"cmp"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -49,6 +50,10 @@ var sidebarKeys = []binding{
 	{label: "⇧PgUp/Dn", keys: []string{"Shift+Page_Up"}, hint: "reorder", help: "move project up / down",
 		run: func(a *app) { a.moveSaved(-1) }},
 	{keys: []string{"Shift+Page_Down"}, run: func(a *app) { a.moveSaved(1) }},
+	{label: "r", keys: []string{"r"}, hint: "rename", help: "rename session (empty = Claude's title)",
+		run: (*app).openRename},
+	{label: "s/*", keys: []string{"s", "*"}, hint: "star", help: "star / unstar session; starred go first (click ★ too)",
+		run: (*app).toggleStar},
 	{label: "d/dd", keys: []string{"d"}, hint: "delete",
 		help: "d: delete session from disk · dd: remove project from list (both ask)", run: (*app).pressD},
 	{label: "g/G", keys: []string{"g", "Home"}, hint: "top/end", show: noPane, help: "top / end",
@@ -102,7 +107,7 @@ func (a *app) match(bs []binding, k vaxis.Key) *binding {
 func (a *app) key(k vaxis.Key) bool {
 	release := k.EventType == vaxis.EventRelease
 	// prompts and help keep Esc for cancel
-	if b := a.match(paneKeys[:1], k); b != nil && (a.inTerm || !a.help && a.confirm == nil && a.input == nil) {
+	if b := a.match(paneKeys[:1], k); b != nil && (a.inTerm || !a.help && a.confirm == nil && a.input == nil && a.rename == nil) {
 		if !release {
 			b.run(a)
 		}
@@ -126,6 +131,8 @@ func (a *app) key(k vaxis.Key) bool {
 		a.confirmKey(k)
 	case a.input != nil:
 		a.promptKey(k)
+	case a.rename != nil:
+		a.renameKey(k)
 	default:
 		a.msg = "" // errors last until the next key
 		if !k.MatchString("d") {
@@ -216,7 +223,9 @@ func (a *app) sidebarMouse(ev vaxis.Mouse, drag bool) {
 		a.scroll(m - offsetAt(r, a.visible, m))
 	case ev.Button == vaxis.MouseLeftButton && ev.EventType == vaxis.EventPress && r >= 0 && r+a.top < len(rows):
 		a.cursor = r + a.top
-		if rows[a.cursor].s != rowHeader {
+		if rows[a.cursor].s >= 0 && ev.Col >= starX && ev.Col < starX+2 {
+			a.toggleStar()
+		} else if rows[a.cursor].s != rowHeader {
 			a.open()
 		}
 	}
@@ -334,11 +343,6 @@ func (a *app) promptKey(k vaxis.Key) {
 		}
 	case dirStep && k.MatchString("Alt+h"):
 		in.hidden, in.subs, in.sel = !in.hidden, nil, 0
-	case k.MatchString("BackSpace"):
-		if r := []rune(*field); len(r) > 0 {
-			*field = string(r[:len(r)-1])
-		}
-		in.sel = 0
 	case k.MatchString("Enter"):
 		path := in.dir
 		if parent, query := in.split(); query != "" && len(ms) > 0 {
@@ -361,8 +365,81 @@ func (a *app) promptKey(k vaxis.Key) {
 		a.save()
 		a.refresh()
 		a.cursor = slices.Index(a.rows(), row{len(a.projects) - 1, rowHeader})
-	case k.Text != "" && k.Modifiers&(vaxis.ModCtrl|vaxis.ModAlt|vaxis.ModSuper) == 0:
-		*field += k.Text
+	case typeKey(field, k):
 		in.err, in.sel = "", 0
 	}
+}
+
+// typeKey applies a backspace or typed text to field; it reports whether k was one.
+func typeKey(field *string, k vaxis.Key) bool {
+	switch {
+	case k.MatchString("BackSpace"):
+		if r := []rune(*field); len(r) > 0 {
+			*field = string(r[:len(r)-1])
+		}
+	case k.Text != "" && k.Modifiers&(vaxis.ModCtrl|vaxis.ModAlt|vaxis.ModSuper) == 0:
+		*field += k.Text
+	default:
+		return false
+	}
+	return true
+}
+
+// savedSession returns the cursor's session once Claude has written it to disk;
+// renaming and starring a session that may never be saved is refused.
+func (a *app) savedSession() (*project, session, bool) {
+	cur := a.current()
+	if cur.s < 0 {
+		return nil, session{}, false
+	}
+	p := a.projects[cur.p]
+	s := p.sessions[cur.s]
+	if _, err := os.Stat(filepath.Join(projectDir(a.root(p), p.Dir), s.ID+".jsonl")); err != nil {
+		a.msg = "session not saved by Claude yet"
+		return nil, session{}, false
+	}
+	return p, s, true
+}
+
+func (a *app) openRename() {
+	if p, s, ok := a.savedSession(); ok {
+		a.rename = &renaming{p: p, id: s.ID, title: s.Title}
+	}
+}
+
+// renameKey edits the rename dialog; drawRename renders it.
+func (a *app) renameKey(k vaxis.Key) {
+	rn := a.rename
+	switch {
+	case k.MatchString("Escape"):
+		a.rename = nil
+	case k.MatchString("Enter"):
+		a.rename = nil
+		if t := strings.TrimSpace(rn.title); t == "" {
+			delete(rn.p.Titles, rn.id)
+		} else {
+			if rn.p.Titles == nil {
+				rn.p.Titles = map[string]string{}
+			}
+			rn.p.Titles[rn.id] = t
+		}
+		a.save()
+		a.refresh()
+	default:
+		typeKey(&rn.title, k)
+	}
+}
+
+func (a *app) toggleStar() {
+	p, s, ok := a.savedSession()
+	if !ok {
+		return
+	}
+	if i := slices.Index(p.Starred, s.ID); i >= 0 {
+		p.Starred = slices.Delete(p.Starred, i, i+1)
+	} else {
+		p.Starred = append(p.Starred, s.ID)
+	}
+	a.save()
+	a.refresh()
 }

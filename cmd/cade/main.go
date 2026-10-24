@@ -18,7 +18,7 @@ const (
 	appName  = "cade"
 	version  = "0.1.0"
 	appLabel = appName + " v" + version
-	sideW    = 40
+	sideW    = 42
 	barW     = 2        // scrollbar columns
 	focusKey = "Escape" // shortcut: hardcoded, make configurable once the key choice settles
 	focusLbl = "Esc"
@@ -54,6 +54,13 @@ type prompt struct {
 	subs      []string // nil = not read yet
 }
 
+// renaming is the rename-session dialog.
+type renaming struct {
+	p     *project
+	id    string
+	title string
+}
+
 // confirmation is a pending yes/no question; yes runs on y.
 type confirmation struct {
 	lines []string
@@ -76,6 +83,7 @@ type app struct {
 
 	// transient UI state
 	input   *prompt       // non-nil while adding a project
+	rename  *renaming     // non-nil while renaming a session
 	confirm *confirmation // non-nil while asking yes/no
 	help    bool          // shortcut dialog open
 	msg     string        // last error, shown above the hints
@@ -190,7 +198,7 @@ Options:
   -v, --version  print the version
 
 Files in ` + filepath.Dir(projectsPath()) + `:
-  projects.json  projects, their order and collapsed state (written by cade)
+  projects.json  projects, their order and collapsed state, session titles and stars (written by cade)
   state.json     remembered UI state (written by cade)
   config.yaml    theme and claude accounts (edited by you)
 `
@@ -265,6 +273,7 @@ func (a *app) open() {
 		args = []string{"--session-id", key}
 		a.pending[key] = true
 		p.sessions = append([]session{{ID: key, Title: "new session"}}, p.sessions...)
+		p.arrange()
 		a.restore(rowKey{dir: p.Dir, id: key})
 	} else {
 		key = p.sessions[cur.s].ID
@@ -296,6 +305,7 @@ func (a *app) refresh() {
 	}
 	for _, p := range a.projects {
 		p.sessions = merge(p.sessions, loadSessions(a.root(p), p.Dir), a.pending)
+		p.arrange()
 	}
 	a.restore(k)
 }
@@ -308,6 +318,8 @@ func (a *app) deleteSession(p *project, id string) {
 		return
 	}
 	p.sessions = slices.DeleteFunc(p.sessions, func(s session) bool { return s.ID == id })
+	p.forget(id)
+	a.save()
 	a.restore(rowKey{})
 }
 
