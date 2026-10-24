@@ -309,6 +309,10 @@ func (a *app) diffKey(k vaxis.Key) {
 		pg.Offset += page()
 	case k.MatchString("Page_Up"), k.MatchString("Shift+Page_Up"):
 		pg.Offset = max(pg.Offset-page(), 0)
+	case k.MatchString("Ctrl+d"):
+		pg.Offset += max(1, page()/2)
+	case k.MatchString("Ctrl+u"):
+		pg.Offset = max(pg.Offset-max(1, page()/2), 0)
 	case k.MatchString("g"), k.MatchString("Home"):
 		pg.Offset = 0
 	case k.MatchString("G"), k.MatchString("End"):

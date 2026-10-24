@@ -78,7 +78,7 @@ var paneKeys = []binding{
 	{label: focusLbl, keys: []string{focusKey, focusAlt}, hint: "sidebar", help: "switch sidebar ↔ pane (also " + focusAlt + ")",
 		when: hasPane, run: func(a *app) { a.setFocus(!a.inTerm) }},
 	{label: diffKey, keys: []string{diffKey}, hint: "git diff",
-		help: "git diff of the session's project, sidebar too; s: side by side ↔ unified",
+		help: "git diff of the session's project, sidebar too; s: side by side ↔ unified; ^D/^U: half page",
 		run:  (*app).openDiff},
 	{label: shellKey, keys: []string{shellKey}, hint: "shell",
 		help: "shell in the project's directory over the pane, sidebar too; again goes back",
