@@ -127,3 +127,23 @@ func TestSearchKeys(t *testing.T) {
 		t.Fatal("Esc should close search")
 	}
 }
+
+func TestAttention(t *testing.T) {
+	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", Collapsed: true, sessions: []session{{ID: "s1"}, {ID: "s2"}}}}}}
+	if !a.markAttn("s2") || !a.markAttn("s1") || a.markAttn("s2") {
+		t.Fatal("markAttn should add each session once")
+	}
+	if strings.Join(a.attn, ",") != "s2,s1" || a.waiting(a.projects[0]) != 2 {
+		t.Fatalf("attn %v", a.attn)
+	}
+	a.active = "s2"
+	a.setFocus(true)
+	if strings.Join(a.attn, ",") != "s1" {
+		t.Fatalf("focusing should clear the active session: %v", a.attn)
+	}
+	a.attn = []string{"gone"}
+	a.focusWaiting()
+	if len(a.attn) != 0 || a.msg == "" {
+		t.Fatalf("missing sessions should drop out: attn %v msg %q", a.attn, a.msg)
+	}
+}

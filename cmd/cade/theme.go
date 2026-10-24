@@ -11,24 +11,25 @@ import (
 
 // palette is a theme as hex colors ("#rrggbb"); "" means the terminal default.
 type palette struct {
-	Bg      string `yaml:"bg"`      // sidebar and title bar background
-	Fg      string `yaml:"fg"`      // session titles
-	Muted   string `yaml:"muted"`   // dirs, ids, hints, separator, scrollbar track
-	Project string `yaml:"project"` // project names
-	SelBg   string `yaml:"selBg"`   // cursor row; "" falls back to reverse video
-	SelFg   string `yaml:"selFg"`
-	Key     string `yaml:"key"`     // [shortcut] labels
-	Running string `yaml:"running"` // ● running session mark
-	Thumb   string `yaml:"thumb"`   // scrollbar thumb
-	Error   string `yaml:"error"`
-	TitleBg string `yaml:"titleBg"` // focused panel's title bar
-	TitleFg string `yaml:"titleFg"`
+	Bg        string `yaml:"bg"`      // sidebar and title bar background
+	Fg        string `yaml:"fg"`      // session titles
+	Muted     string `yaml:"muted"`   // dirs, ids, hints, separator, scrollbar track
+	Project   string `yaml:"project"` // project names
+	SelBg     string `yaml:"selBg"`   // cursor row; "" falls back to reverse video
+	SelFg     string `yaml:"selFg"`
+	Key       string `yaml:"key"`       // [shortcut] labels
+	Running   string `yaml:"running"`   // ● running session mark
+	Attention string `yaml:"attention"` // ◆ session waiting for you
+	Thumb     string `yaml:"thumb"`     // scrollbar thumb
+	Error     string `yaml:"error"`
+	TitleBg   string `yaml:"titleBg"` // focused panel's title bar
+	TitleFg   string `yaml:"titleFg"`
 }
 
 var themes = map[string]palette{
 	"dracula": {
 		Bg: "#282a36", Fg: "#f8f8f2", Muted: "#6272a4", Project: "#bd93f9",
-		SelBg: "#44475a", SelFg: "#f8f8f2", Key: "#ff79c6", Running: "#50fa7b",
+		SelBg: "#44475a", SelFg: "#f8f8f2", Key: "#ff79c6", Running: "#50fa7b", Attention: "#ffb86c",
 		Thumb: "#bd93f9", Error: "#ff5555", TitleBg: "#bd93f9", TitleFg: "#282a36",
 	},
 	"terminal": {}, // terminal's own colors, attributes only
@@ -71,8 +72,8 @@ func inherit(p, base palette) palette {
 
 // theme is a palette resolved into ready-to-use styles.
 type theme struct {
-	base, muted, project, key, running, thumb, err vaxis.Style
-	sel, selBlur, title, titleBlur                 vaxis.Style
+	base, muted, project, key, running, attention, thumb, err vaxis.Style
+	sel, selBlur, title, titleBlur                            vaxis.Style
 }
 
 func mustTheme(p palette) theme {
@@ -99,7 +100,7 @@ func (p palette) build() (theme, error) {
 	fg := func(field, hex string) vaxis.Style { return vaxis.Style{Foreground: c(field, hex), Background: bg} }
 	t := theme{
 		base: fg("fg", p.Fg), muted: fg("muted", p.Muted), project: fg("project", p.Project),
-		key: fg("key", p.Key), running: fg("running", p.Running), thumb: fg("thumb", p.Thumb), err: fg("error", p.Error),
+		key: fg("key", p.Key), running: fg("running", p.Running), attention: fg("attention", p.Attention), thumb: fg("thumb", p.Thumb), err: fg("error", p.Error),
 		sel:       vaxis.Style{Foreground: c("selFg", p.SelFg), Background: c("selBg", p.SelBg)},
 		title:     vaxis.Style{Foreground: c("titleFg", p.TitleFg), Background: c("titleBg", p.TitleBg), Attribute: vaxis.AttrBold},
 		titleBlur: vaxis.Style{Foreground: c("muted", p.Muted), Background: c("selBg", p.SelBg), Attribute: vaxis.AttrBold},

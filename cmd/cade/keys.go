@@ -42,6 +42,8 @@ var sidebarKeys = []binding{
 		idle: "open selected session", run: (*app).open},
 	{label: "n", keys: []string{"n"}, hint: "new session", help: "new session in this project", idle: "new session",
 		run: (*app).newSession},
+	{label: "f", keys: []string{"f"}, hint: "waiting", show: func(a *app) bool { return len(a.attn) > 0 },
+		help: "focus next waiting session (◆), oldest first", run: (*app).focusWaiting},
 	{label: "/", keys: []string{"/"}, hint: "search", help: "fuzzy search session titles, all projects",
 		run: func(a *app) { a.search = &searching{} }},
 	{label: "←/→", keys: []string{"Left"}, hint: "fold", help: "collapse / expand project",
@@ -63,6 +65,8 @@ var sidebarKeys = []binding{
 	{keys: []string{"G", "End"}, run: func(a *app) { a.cursor = len(a.rows()) - 1 }},
 	{label: "⇥", keys: []string{"Tab", "Escape"}, hint: "pane", show: hasPane, when: hasPane, help: "go to Claude pane",
 		run: func(a *app) { a.setFocus(true) }},
+	{label: ",", keys: []string{","}, hint: "settings", help: "settings: theme, hints, edit config.yaml in $EDITOR",
+		run: func(a *app) { a.set = &settings{} }},
 	{label: "?", keys: []string{"?"}, hint: "help", always: true, help: "this help", idle: "all shortcuts",
 		run: func(a *app) { a.help = true }},
 	{label: "q", keys: []string{"q", "Ctrl+c"}, hint: "quit", help: "quit", run: func(a *app) { a.quit = true }},
@@ -117,7 +121,7 @@ func (a *app) match(bs []binding, k vaxis.Key) *binding {
 func (a *app) key(k vaxis.Key) bool {
 	release := k.EventType == vaxis.EventRelease
 	// prompts and help keep Esc for cancel
-	if b := a.match(paneKeys[:1], k); b != nil && (a.inTerm || !a.help && a.confirm == nil && a.input == nil && a.rename == nil && a.search == nil) {
+	if b := a.match(paneKeys[:1], k); b != nil && (a.inTerm || !a.help && a.confirm == nil && a.input == nil && a.rename == nil && a.search == nil && a.set == nil) {
 		if !release {
 			b.run(a)
 		}
@@ -145,6 +149,8 @@ func (a *app) key(k vaxis.Key) bool {
 		a.renameKey(k)
 	case a.search != nil:
 		a.searchKey(k)
+	case a.set != nil:
+		a.settingsKey(k)
 	default:
 		a.msg = "" // errors last until the next key
 		if !k.MatchString("d") {
@@ -494,5 +500,35 @@ func (a *app) searchKey(k vaxis.Key) {
 		a.open()
 	case typeKey(&sr.query, k):
 		sr.sel = 0
+	}
+}
+
+// settingRows are the settings dialog's rows, in order.
+const (
+	setTheme = iota
+	setHints
+	setEdit
+	settingRows
+)
+
+// settingsKey drives the settings dialog; drawSettings renders it.
+func (a *app) settingsKey(k vaxis.Key) {
+	st := a.set
+	change := k.MatchString("Enter") || k.MatchString("space")
+	switch {
+	case k.MatchString("Escape"), k.MatchString(","), k.MatchString("q"):
+		a.set = nil
+	case k.MatchString("Up"), k.MatchString("k"), k.MatchString("Shift+Tab"): // before Tab, which Shift+Tab also matches
+		st.sel = max(st.sel-1, 0)
+	case k.MatchString("Down"), k.MatchString("j"), k.MatchString("Tab"):
+		st.sel = min(st.sel+1, settingRows-1)
+	case k.MatchString("e"), st.sel == setEdit && change:
+		a.editConfig()
+	case st.sel == setTheme && (k.MatchString("Left") || k.MatchString("h")):
+		a.cycleTheme(-1)
+	case st.sel == setTheme && (change || k.MatchString("Right") || k.MatchString("l")):
+		a.cycleTheme(1)
+	case st.sel == setHints && (change || k.MatchString("Left") || k.MatchString("Right")):
+		a.toggleHints()
 	}
 }

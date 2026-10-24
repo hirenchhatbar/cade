@@ -1,18 +1,24 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"regexp"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-// config is config.yaml, the file the user edits; cade never writes it.
+// config is config.yaml, the file the user edits. cade writes only its theme
+// key, from the settings dialog, keeping the rest of the file as it is.
 type config struct {
 	Theme  string             `yaml:"theme"`
 	Themes map[string]palette `yaml:"themes"` // user themes; empty fields inherit from dracula
@@ -33,23 +39,27 @@ type account struct {
 
 func configPath() string { return filepath.Join(filepath.Dir(projectsPath()), "config.yaml") }
 
-// loadConfig reads config.yaml; a missing file means defaults. Unlike a bad
-// theme, a bad file is an error: running claude without its sandbox or with
-// the wrong account must not happen quietly.
-func loadConfig(path string) (config, error) {
-	var cfg config
+// parseConfig reads config.yaml; a missing file means defaults. It lists every
+// unknown key and a bad default as issues; err is an unreadable file or a
+// syntax error, after which nothing was read.
+func parseConfig(path string) (cfg config, issues []string, err error) {
 	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return cfg, nil
+		return cfg, nil, nil
 	}
 	if err != nil {
-		return cfg, err
+		return cfg, nil, err
 	}
 	defer f.Close()
 	dec := yaml.NewDecoder(f)
 	dec.KnownFields(true) // a typo like "comand" would silently start plain claude
-	if err := dec.Decode(&cfg); err != nil && err != io.EOF {
-		return cfg, err
+	var te *yaml.TypeError
+	if err := dec.Decode(&cfg); errors.As(err, &te) {
+		for _, e := range te.Errors {
+			issues = append(issues, didYouMean(e))
+		}
+	} else if err != nil && err != io.EOF {
+		return cfg, nil, err
 	}
 	c := &cfg.Claude
 	if c.Default == "" && len(c.Accounts) == 1 {
@@ -58,9 +68,164 @@ func loadConfig(path string) (config, error) {
 		}
 	}
 	if _, ok := c.Accounts[c.Default]; len(c.Accounts) > 0 && !ok {
-		return cfg, fmt.Errorf("claude.default: no account %q", c.Default)
+		issues = append(issues, fmt.Sprintf("claude.default: no account %q", c.Default))
 	}
-	return cfg, nil
+	return cfg, issues, nil
+}
+
+// checkConfig lists every problem in config.yaml that cade can find. err is set
+// when cade would refuse to start: a bad file, or an account's program not on
+// PATH, so it never runs claude without its sandbox or as the wrong account
+// quietly. A bad theme or a missing directory is listed but not fatal.
+func checkConfig(path, home, cwd string) (config, []string, error) {
+	cfg, issues, err := parseConfig(path)
+	if err != nil {
+		return cfg, []string{err.Error()}, err
+	}
+	accs := map[string]account{"": {}} // plain claude when no accounts are configured
+	if len(cfg.Claude.Accounts) > 0 {
+		accs = cfg.Claude.Accounts
+	}
+	for _, name := range slices.Sorted(maps.Keys(accs)) {
+		if bin := accs[name].argv(home, cwd)[0]; !onPath(bin) {
+			issues = append(issues, fmt.Sprintf("%s%s not found in PATH", accField(name, "command"), bin))
+		}
+	}
+	if len(issues) > 0 {
+		err = errors.New(strings.Join(issues, "\n"))
+	}
+	if _, terr := loadTheme(cfg); terr != nil {
+		issues = append(issues, "theme: "+terr.Error())
+	}
+	for _, name := range slices.Sorted(maps.Keys(cfg.Claude.Accounts)) {
+		acc := cfg.Claude.Accounts[name]
+		if acc.ConfigDir != "" && !isDir(acc.sessionsRoot(home)) {
+			issues = append(issues, fmt.Sprintf("%s%s is not a directory", accField(name, "configDir"), acc.sessionsRoot(home)))
+		}
+		for _, d := range acc.Dirs {
+			if d = expand(d, home, ""); !isDir(d) {
+				issues = append(issues, fmt.Sprintf("%s%s is not a directory", accField(name, "dirs"), d))
+			}
+		}
+	}
+	return cfg, issues, err
+}
+
+// accField names an account's field in an issue; the implicit plain-claude account has none.
+func accField(name, field string) string {
+	if name == "" {
+		return ""
+	}
+	return "claude.accounts." + name + "." + field + ": "
+}
+
+func onPath(bin string) bool { _, err := exec.LookPath(bin); return err == nil }
+
+func isDir(path string) bool { st, err := os.Stat(path); return err == nil && st.IsDir() }
+
+var unknownKey = regexp.MustCompile(`^(line \d+): field (.+) not found in type`)
+
+// didYouMean rewrites yaml's unknown-field error, naming the closest known key.
+func didYouMean(e string) string {
+	m := unknownKey.FindStringSubmatch(e)
+	if m == nil {
+		return e
+	}
+	out := fmt.Sprintf("%s: unknown key %q", m[1], m[2])
+	best, bestD := "", 3 // more than 2 edits away is no suggestion
+	for _, k := range yamlKeys(reflect.TypeOf(config{}), nil) {
+		if d := editDistance(m[2], k); d < bestD && d < len(m[2]) {
+			best, bestD = k, d
+		}
+	}
+	if best != "" {
+		out += fmt.Sprintf(" (did you mean %q?)", best)
+	}
+	return out
+}
+
+// yamlKeys lists the yaml keys of t and of the structs nested in it.
+func yamlKeys(t reflect.Type, keys []string) []string {
+	for t.Kind() == reflect.Map || t.Kind() == reflect.Slice {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return keys
+	}
+	for i := range t.NumField() {
+		f := t.Field(i)
+		if k, _, _ := strings.Cut(f.Tag.Get("yaml"), ","); k != "" {
+			keys = yamlKeys(f.Type, append(keys, k))
+		}
+	}
+	return keys
+}
+
+// editDistance is the Levenshtein distance between a and b, case-insensitive.
+func editDistance(a, b string) int {
+	ra, rb := []rune(strings.ToLower(a)), []rune(strings.ToLower(b))
+	prev := make([]int, len(rb)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := range ra {
+		cur := []int{i + 1}
+		for j := range rb {
+			cost := 1
+			if ra[i] == rb[j] {
+				cost = 0
+			}
+			cur = append(cur, min(prev[j]+cost, prev[j+1]+1, cur[j]+1))
+		}
+		prev = cur
+	}
+	return prev[len(rb)]
+}
+
+// saveTheme sets the theme key in config.yaml, creating the file if needed.
+// It edits the yaml tree rather than re-encoding config, so comments and key
+// order survive; indentation is normalised to two spaces.
+func saveTheme(path, name string) error {
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		path = real // a dotfiles symlink stays a symlink
+	}
+	b, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		return err
+	}
+	if doc.Kind == 0 { // empty or missing file
+		doc = yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{{Kind: yaml.MappingNode}}}
+	}
+	m := doc.Content[0]
+	if m.Kind != yaml.MappingNode {
+		return errors.New("config.yaml is not a mapping")
+	}
+	i := 0
+	for i < len(m.Content) && m.Content[i].Value != "theme" {
+		i += 2 // keys and values alternate
+	}
+	if i < len(m.Content) {
+		m.Content[i+1].SetString(name)
+	} else {
+		key, val := &yaml.Node{}, &yaml.Node{}
+		key.SetString("theme")
+		val.SetString(name)
+		m.Content = append([]*yaml.Node{key, val}, m.Content...)
+	}
+	var out bytes.Buffer
+	enc := yaml.NewEncoder(&out)
+	enc.SetIndent(2)
+	if err := enc.Encode(&doc); err != nil {
+		return err
+	}
+	if err := enc.Close(); err != nil {
+		return err
+	}
+	return writeFile(path, out.Bytes())
 }
 
 // account picks the account whose dirs hold dir most specifically, else the default.

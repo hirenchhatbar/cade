@@ -64,6 +64,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `⇧↑/⇧↓` | previous / next project |
 | `l/⏎` | open session (click works too; new one on a project row) |
 | `n` | new session in this project |
+| `f` | focus next waiting session (◆), oldest first |
 | `/` | fuzzy search session titles, all projects |
 | `←/→` | collapse / expand project |
 | `a` | add project (name, then directory; ⇥ opens a match) |
@@ -73,6 +74,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `d/dd` | d: delete session from disk · dd: remove project from list (both ask) |
 | `g/G` | top / end |
 | `⇥` | go to Claude pane |
+| `,` | settings: theme, hints, edit config.yaml in $EDITOR |
 | `?` | this help |
 | `q` | quit |
 | `H` | show / hide these hints |
@@ -94,6 +96,13 @@ Open sessions keep running when you switch to another one; `●` marks them. Cop
 your terminal must allow clipboard writes from programs. If Claude turns on mouse reporting, hold
 `Shift` to select.
 
+When a session other than the one you're typing in needs you (Claude rings the bell on a
+permission prompt or when it waits for input), cade rings your terminal's bell, sends a desktop
+notification, marks the session `◆` with its title in bold, and counts waiting sessions in the
+pane's title bar. `f` opens the one that has waited longest; press it again for the next. From the
+Claude pane that is `Esc` `f`. cade starts Claude with
+`--settings '{"preferredNotifChannel":"terminal_bell"}'` for this.
+
 ## Configuration
 
 All files live in `~/.config/cade/` (`$XDG_CONFIG_HOME/cade/` if set; on macOS
@@ -103,7 +112,7 @@ All files live in `~/.config/cade/` (`$XDG_CONFIG_HOME/cade/` if set; on macOS
 |---|---|---|
 | `projects.json` | cade | projects, their order and collapsed state, session titles and stars |
 | `state.json` | cade | remembered UI state (hints hidden) |
-| `config.yaml` | you | theme, Claude accounts |
+| `config.yaml` | you (cade writes only `theme`) | theme, Claude accounts |
 
 ### Themes
 
@@ -122,8 +131,21 @@ themes:
 ```
 
 Colour fields, as `#rrggbb`: `bg`, `fg`, `muted`, `project`, `selBg`, `selFg`, `key`, `running`,
-`thumb`, `error`, `titleBg`, `titleFg`. A bad config falls back to Dracula and shows the error in
-the sidebar. The config is read at startup. Themes colour cade's own panels only; the Claude pane
+`attention`, `thumb`, `error`, `titleBg`, `titleFg`. A bad config falls back to Dracula and shows the error in
+the sidebar. The config is read at startup.
+
+### Settings dialog
+
+`,` opens settings. Picking a theme applies at once and writes the `theme` key to `config.yaml`;
+the rest of the file, comments included, is kept (indentation is normalised to two spaces).
+"Edit config.yaml" suspends cade and opens the file in `$VISUAL`, else `$EDITOR`, else `vi`. On
+save cade checks the file: a clean one takes effect at once (account changes apply to sessions
+started after it), otherwise the dialog lists the issues and the config from before the edit stays
+in use. Bells from Claude while the editor is open are missed.
+
+`cade --check` lists every problem in `config.yaml` (unknown keys with a "did you mean", a bad
+`default`, programs not on `PATH`, a bad theme, missing `configDir` and `dirs` directories) and
+exits 1 if there are any. Themes colour cade's own panels only; the Claude pane
 uses Claude's `/theme`.
 
 `config.json` from older versions is no longer read. JSON is valid YAML, so renaming it to
@@ -159,7 +181,7 @@ claude:
 Values may use a leading `~`, `$VAR` and `$PWD` (the project directory). No shell runs, so `~` in
 the middle of a flag is not expanded: use `$HOME`. cade refuses to start if the file is invalid
 (unknown fields included) or an account's program is not on `PATH`, so it never falls back to
-plain `claude` quietly.
+plain `claude` quietly. A bad theme or a missing directory doesn't stop it; `cade --check` lists those too.
 
 ## Development
 

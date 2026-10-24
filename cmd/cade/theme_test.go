@@ -13,7 +13,7 @@ func TestLoadTheme(t *testing.T) {
 	path := filepath.Join(dir, "config.yaml")
 	dracula := mustTheme(themes["dracula"])
 	load := func() (theme, error) {
-		cfg, err := loadConfig(path)
+		cfg, err := loadConfig(t, path)
 		if err != nil {
 			return dracula, err
 		}

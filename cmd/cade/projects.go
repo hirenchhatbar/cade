@@ -65,7 +65,7 @@ func loadProjects(path string) ([]*project, error) {
 func saveProjects(path string, ps []*project) error { return writeJSON(path, ps) }
 
 // state is UI state cade remembers between runs (kept apart from the
-// hand-edited config.json so cade never rewrites that file).
+// hand-edited config.yaml, which cade only writes from the settings dialog).
 type state struct {
 	HideHints bool `json:"hideHints"`
 }
@@ -85,11 +85,21 @@ func writeJSON(path string, v any) error {
 	if err != nil {
 		return err
 	}
+	return writeFile(path, b)
+}
+
+// writeFile writes via a temp file so a crash can't leave a half-written file.
+// An existing file keeps its mode: config.yaml may hold secrets in env.
+func writeFile(path string, b []byte) error {
+	mode := os.FileMode(0o644)
+	if st, err := os.Stat(path); err == nil {
+		mode = st.Mode().Perm()
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	if err := os.WriteFile(tmp, b, mode); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)

@@ -1,13 +1,14 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"go.rockorager.dev/vaxis"
@@ -29,9 +30,17 @@ const (
 	newRowLbl = "[n] new session"
 	selLinger = 600 * time.Millisecond // selection stays highlighted this long after a copy
 	ddWindow  = 400 * time.Millisecond // a second d within this means dd
+	// Claude's "auto" channel may pick OSC 99 (kitty), which the pane drops; BEL always arrives.
+	notifSettings = `{"preferredNotifChannel":"terminal_bell"}`
 )
 
 type refreshEvent struct{}
+
+// termEvent is an event from the terminal of session id, so bells can be told apart.
+type termEvent struct {
+	id string
+	ev vaxis.Event
+}
 
 // dTimeout fires when no second d followed the first, so the single-d action runs.
 type dTimeout struct{ seq int }
@@ -67,6 +76,13 @@ type renaming struct {
 	title string
 }
 
+// settings is the , dialog. issues are what checkConfig found after the last
+// $EDITOR run; the config in use then is still the one from before the edit.
+type settings struct {
+	sel    int // highlighted row, see settingRows
+	issues []string
+}
+
 // confirmation is a pending yes/no question; yes runs on y.
 type confirmation struct {
 	lines []string
@@ -84,14 +100,16 @@ type app struct {
 	st      state           // remembered UI state
 	pending map[string]bool // started from cade, jsonl may not exist yet
 	terms   map[string]*term.Model
-	active  string // key into terms
-	inTerm  bool   // keyboard focus on the Claude pane
+	active  string   // key into terms
+	inTerm  bool     // keyboard focus on the Claude pane
+	attn    []string // sessions that rang for attention, oldest first
 
 	// transient UI state
 	input   *prompt       // non-nil while adding a project
 	rename  *renaming     // non-nil while renaming a session
 	search  *searching    // non-nil while searching sessions
 	confirm *confirmation // non-nil while asking yes/no
+	set     *settings     // non-nil while the settings dialog is open
 	help    bool          // shortcut dialog open
 	msg     string        // last error, shown above the hints
 	dWait   bool          // a first d was pressed, see ddWindow
@@ -106,21 +124,10 @@ func main() {
 	}
 	cwd, _ := os.Getwd()
 	home, _ := os.UserHomeDir()
-	cfg, err := loadConfig(configPath())
+	cfg, _, err := checkConfig(configPath(), home, cwd)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cade: %s: %v\n", configPath(), err)
+		fmt.Fprintf(os.Stderr, "cade: %s:\n%s\n", configPath(), indent(err.Error()))
 		os.Exit(1)
-	}
-	accs := []account{{}} // plain claude when no accounts are configured
-	if len(cfg.Claude.Accounts) > 0 {
-		accs = slices.Collect(maps.Values(cfg.Claude.Accounts))
-	}
-	for _, acc := range accs {
-		bin := acc.argv(home, cwd)[0]
-		if _, err := exec.LookPath(bin); err != nil {
-			fmt.Fprintf(os.Stderr, "cade: %s not found in PATH\n", bin)
-			os.Exit(1)
-		}
 	}
 	cfgPath := projectsPath()
 	projects, err := loadProjects(cfgPath)
@@ -171,6 +178,15 @@ func cli(args []string, out, errOut io.Writer) int {
 	switch args[0] {
 	case "-h", "--help":
 		fmt.Fprint(out, usage())
+	case "-c", "--check":
+		home, _ := os.UserHomeDir()
+		cwd, _ := os.Getwd()
+		_, issues, _ := checkConfig(configPath(), home, cwd)
+		if len(issues) > 0 {
+			fmt.Fprintf(errOut, "%s:\n%s\n", configPath(), indent(strings.Join(issues, "\n")))
+			return 1
+		}
+		fmt.Fprintf(out, "%s: ok\n", configPath())
 	case "-k", "--keys":
 		fmt.Fprint(out, keysMarkdown())
 	case "-v", "--version":
@@ -181,6 +197,8 @@ func cli(args []string, out, errOut io.Writer) int {
 	}
 	return 0
 }
+
+func indent(s string) string { return "  " + strings.ReplaceAll(s, "\n", "\n  ") }
 
 // logo is the app name in block letters, shown in the idle pane and --help.
 const logo = ` ██████╗ █████╗ ██████╗ ███████╗
@@ -201,13 +219,14 @@ all shortcuts.
 
 Options:
   -h, --help     show this help
+  -c, --check    list problems in config.yaml
   -k, --keys     print all keyboard shortcuts as Markdown
   -v, --version  print the version
 
 Files in ` + filepath.Dir(projectsPath()) + `:
   projects.json  projects, their order and collapsed state, session titles and stars (written by cade)
   state.json     remembered UI state (written by cade)
-  config.yaml    theme and claude accounts (edited by you)
+  config.yaml    theme and claude accounts (edited by you; the theme also from , settings)
 `
 }
 
@@ -242,6 +261,20 @@ func (a *app) handle(ev vaxis.Event) bool {
 			a.dWait = false
 			a.confirmSession()
 		}
+	case termEvent:
+		switch e := ev.ev.(type) {
+		case term.EventBell, term.EventNotify:
+			if a.inTerm && ev.id == a.active {
+				if n, ok := e.(term.EventNotify); ok {
+					a.vx.Notify(n.Title, n.Body)
+				}
+			} else if a.markAttn(ev.id) {
+				a.vx.Bell()
+				a.vx.Notify(appName, a.titleOf(ev.id))
+			}
+		default:
+			return a.handle(e)
+		}
 	case term.EventClosed:
 		for id, t := range a.terms {
 			if t == ev.Term {
@@ -251,8 +284,6 @@ func (a *app) handle(ev vaxis.Event) bool {
 		}
 	case term.EventTitle:
 		a.vx.SetTitle(string(ev))
-	case term.EventNotify:
-		a.vx.Notify(ev.Title, ev.Body)
 	case term.EventMouseShape:
 		a.vx.SetMouseShape(ev.Shape)
 	}
@@ -286,9 +317,10 @@ func (a *app) open() {
 		key = p.sessions[cur.s].ID
 		args = []string{"--resume", key}
 	}
+	args = append(args, "--settings", notifSettings)
 	if _, ok := a.terms[key]; !ok {
 		t := term.New(term.WithVaxis(a.vx))
-		t.Attach(a.vx.PostEvent)
+		t.Attach(func(ev vaxis.Event) { a.vx.PostEvent(termEvent{key, ev}) })
 		cmd := a.account(p).cmd(a.home, p.Dir, args...)
 		w, h := a.paneSize()
 		if err := t.StartWithSize(cmd, w, h); err != nil {
@@ -348,6 +380,7 @@ func (a *app) closeTerm(id string) {
 	if t := a.terms[id]; t != nil {
 		t.Close()
 		delete(a.terms, id)
+		a.clearAttn(id)
 		if a.active == id {
 			a.active, a.inTerm = "", false
 		}
@@ -356,6 +389,9 @@ func (a *app) closeTerm(id string) {
 
 func (a *app) setFocus(inTerm bool) {
 	a.inTerm = inTerm
+	if inTerm {
+		a.clearAttn(a.active)
+	}
 	if t := a.terms[a.active]; t != nil {
 		if inTerm {
 			t.Focus()
@@ -368,4 +404,98 @@ func (a *app) setFocus(inTerm bool) {
 func (a *app) paneSize() (int, int) {
 	w, h := a.vx.Window().Size()
 	return max(w-sideW-1-barW, 1), max(h-1, 1) // separator, scrollbar, title bar
+}
+
+// markAttn queues session id as waiting; it reports whether it was new.
+func (a *app) markAttn(id string) bool {
+	if slices.Contains(a.attn, id) {
+		return false
+	}
+	a.attn = append(a.attn, id)
+	return true
+}
+
+func (a *app) clearAttn(id string) {
+	a.attn = slices.DeleteFunc(a.attn, func(s string) bool { return s == id })
+}
+
+// focusWaiting opens the session that has waited longest.
+func (a *app) focusWaiting() {
+	for len(a.attn) > 0 {
+		id := a.attn[0]
+		for pi, p := range a.projects {
+			if si := slices.IndexFunc(p.sessions, func(s session) bool { return s.ID == id }); si >= 0 {
+				p.Collapsed = false
+				a.cursor = slices.Index(a.rows(), row{pi, si})
+				a.open()
+				return
+			}
+		}
+		a.clearAttn(id) // session gone from disk and list
+	}
+	a.msg = "no session waiting"
+}
+
+// editConfig runs $EDITOR on config.yaml with cade suspended, then checks the
+// file. A clean file takes effect at once, accounts for sessions started from
+// then on; any issue keeps the config in use and lists the issues in the dialog.
+func (a *app) editConfig() {
+	path := configPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		a.set.issues = []string{err.Error()}
+		return
+	}
+	// through sh, like git, so an editor with flags ("code -w") works
+	cmd := exec.Command("sh", "-c", cmp.Or(os.Getenv("VISUAL"), os.Getenv("EDITOR"), "vi")+` "$1"`, "sh", path)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := a.vx.Suspend(); err != nil {
+		a.set.issues = []string{"suspend: " + err.Error()}
+		return
+	}
+	runErr := cmd.Run()
+	if err := a.vx.Resume(); err != nil {
+		a.fail("resume: ", err)
+	}
+	if runErr != nil {
+		a.set.issues = []string{"editor: " + runErr.Error()}
+		return
+	}
+	cfg, issues, _ := checkConfig(path, a.home, a.cwd)
+	if a.set.issues = issues; len(issues) > 0 {
+		return
+	}
+	a.cfg = cfg
+	a.th, _ = loadTheme(cfg) // no issues, so no theme error
+	a.refresh()              // an account may now keep its sessions elsewhere
+	a.msg = "config.yaml reloaded"
+}
+
+// themeNames lists the built-in and user themes, sorted.
+func (a *app) themeNames() []string {
+	var names []string
+	for name := range themes {
+		names = append(names, name)
+	}
+	for name := range a.cfg.Themes {
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
+// cycleTheme switches to the next (dir>0) or previous theme, saving it to config.yaml.
+func (a *app) cycleTheme(dir int) {
+	names := a.themeNames()
+	i := slices.Index(names, cmp.Or(a.cfg.Theme, defaultTheme))
+	name := names[((i+dir)%len(names)+len(names))%len(names)]
+	if err := saveTheme(configPath(), name); err != nil {
+		a.fail("save failed: ", err)
+		return
+	}
+	a.cfg.Theme = name
+	var err error
+	a.th, err = loadTheme(a.cfg)
+	a.fail("", err)
 }

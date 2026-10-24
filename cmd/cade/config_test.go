@@ -1,9 +1,11 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -12,7 +14,7 @@ func TestAccounts(t *testing.T) {
 	write := func(s string) { os.WriteFile(path, []byte(s), 0o644) }
 	home := "/h"
 
-	cfg, err := loadConfig(path)
+	cfg, err := loadConfig(t, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +38,7 @@ claude:
       dirs: [~/www/a, /srv/b/]
 `)
 	t.Setenv("HOME", home)
-	if cfg, err = loadConfig(path); err != nil {
+	if cfg, err = loadConfig(t, path); err != nil {
 		t.Fatal(err)
 	}
 	cmd := cfg.account("/p", home).cmd(home, "/p", "--session-id", "x")
@@ -56,7 +58,7 @@ claude:
 	}
 
 	write("claude:\n  accounts:\n    solo: {command: [x]}\n")
-	if cfg, err = loadConfig(path); err != nil || cfg.account("/p", home).argv(home, "/p")[0] != "x" {
+	if cfg, err = loadConfig(t, path); err != nil || cfg.account("/p", home).argv(home, "/p")[0] != "x" {
 		t.Fatalf("single account should be the default: %v", err)
 	}
 	for _, bad := range []string{
@@ -66,8 +68,88 @@ claude:
 		"theme: [",
 	} {
 		write(bad)
-		if _, err := loadConfig(path); err == nil {
+		if _, err := loadConfig(t, path); err == nil {
 			t.Errorf("%q: want error", bad)
 		}
+	}
+}
+
+// loadConfig is parseConfig with its issues as an error, as startup sees them.
+func loadConfig(t *testing.T, path string) (config, error) {
+	t.Helper()
+	cfg, issues, err := parseConfig(path)
+	if err == nil && len(issues) > 0 {
+		err = errors.New(strings.Join(issues, "\n"))
+	}
+	return cfg, err
+}
+
+func TestCheckConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	write := func(s string) { os.WriteFile(path, []byte(s), 0o644) }
+	bin := filepath.Join(dir, "fakeclaude")
+	os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755)
+
+	write("claude:\n  accounts:\n    a: {command: [" + bin + "], dirs: [" + dir + "]}\n")
+	if _, issues, err := checkConfig(path, dir, dir); err != nil || len(issues) > 0 {
+		t.Fatalf("clean config: %v %v", issues, err)
+	}
+
+	write("theme: nope\nclaude:\n  accounts:\n    a: {comand: [x], dirz: [y], command: [no-such-bin], configDir: /no/such}\n")
+	_, issues, err := checkConfig(path, dir, dir)
+	want := []string{
+		`line 4: unknown key "comand" (did you mean "command"?)`,
+		`line 4: unknown key "dirz" (did you mean "dirs"?)`,
+		"claude.accounts.a.command: no-such-bin not found in PATH",
+		`theme: unknown theme "nope"`,
+		"claude.accounts.a.configDir: /no/such is not a directory",
+	}
+	if !slices.Equal(issues, want) {
+		t.Fatalf("issues:\n%s", strings.Join(issues, "\n"))
+	}
+	if err == nil || strings.Contains(err.Error(), "theme") || strings.Contains(err.Error(), "configDir") {
+		t.Fatalf("fatal error should hold the first three issues only: %v", err)
+	}
+
+	write("theme: [")
+	if _, issues, err := checkConfig(path, dir, dir); err == nil || len(issues) != 1 {
+		t.Fatalf("syntax error: %v %v", issues, err)
+	}
+}
+
+func TestSaveTheme(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := saveTheme(path, "terminal"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != "theme: terminal\n" {
+		t.Fatalf("new file: %q", b)
+	}
+
+	orig := "# my config\nclaude: # accounts\n  default: me\n  accounts:\n    me: {}\ntheme: dracula # dark\n"
+	os.WriteFile(path, []byte(orig), 0o600)
+	os.Chmod(path, 0o600)
+	link := filepath.Join(dir, "link.yaml")
+	os.Symlink(path, link)
+	if err := saveTheme(link, "terminal"); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	if want := strings.Replace(orig, "dracula", "terminal", 1); string(b) != want {
+		t.Fatalf("got\n%s\nwant\n%s", b, want)
+	}
+	if st, _ := os.Lstat(link); st.Mode()&os.ModeSymlink == 0 {
+		t.Error("symlink replaced by a file")
+	}
+	if st, _ := os.Stat(path); st.Mode().Perm() != 0o600 {
+		t.Errorf("mode %v, want 0600", st.Mode().Perm())
+	}
+
+	os.WriteFile(path, []byte("claude: {}\n"), 0o644)
+	saveTheme(path, "x")
+	if cfg, err := loadConfig(t, path); err != nil || cfg.Theme != "x" {
+		t.Fatalf("added key: %v %q", err, cfg.Theme)
 	}
 }

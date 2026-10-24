@@ -1,7 +1,9 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 
@@ -164,6 +166,7 @@ func (a *app) draw() {
 	a.drawHelp(win)
 	a.drawAdd(win)
 	a.drawRename(win)
+	a.drawSettings(win)
 	a.vx.Render()
 }
 
@@ -252,20 +255,28 @@ func (a *app) drawRow(win vaxis.Window, y int, r row, selected bool, cw int) {
 		}
 		name := th.project
 		name.Attribute |= vaxis.AttrBold
+		waiting := ""
+		if n := a.waiting(p); p.Collapsed && n > 0 {
+			waiting = fmt.Sprintf(" ◆%d", n)
+		}
 		win.PrintTruncate(y,
 			vaxis.Segment{Text: arrow + p.Name, Style: hl(name)},
-			vaxis.Segment{Text: pad("  "+a.short(p.Dir), cw-runeLen(arrow+p.Name)), Style: hl(th.muted)})
+			vaxis.Segment{Text: waiting, Style: hl(th.attention)},
+			vaxis.Segment{Text: pad("  "+a.short(p.Dir), cw-runeLen(arrow+p.Name+waiting)), Style: hl(th.muted)})
 		return
 	}
 	branch := "   ├─ "
 	if r.s == len(p.sessions)-1 || (r.s == rowNew && len(p.sessions) == 0) {
 		branch = "   └─ "
 	}
-	label, mark, star, labelStyle := newRowLbl, "  ", "", th.key
+	label, mark, star, labelStyle, markStyle := newRowLbl, "  ", "", th.key, th.running
 	if r.s >= 0 {
 		s := p.sessions[r.s]
 		label, star, labelStyle = s.Title, "  ", th.base
-		if a.terms[s.ID] != nil {
+		if slices.Contains(a.attn, s.ID) {
+			mark, markStyle = "◆ ", th.attention
+			labelStyle.Attribute |= vaxis.AttrBold
+		} else if a.terms[s.ID] != nil {
 			mark = "● "
 		}
 		if slices.Contains(p.Starred, s.ID) {
@@ -275,7 +286,7 @@ func (a *app) drawRow(win vaxis.Window, y int, r row, selected bool, cw int) {
 	room := cw - runeLen(branch+mark+star)
 	win.PrintTruncate(y,
 		vaxis.Segment{Text: branch, Style: hl(th.muted)},
-		vaxis.Segment{Text: mark, Style: hl(th.running)},
+		vaxis.Segment{Text: mark, Style: hl(markStyle)},
 		vaxis.Segment{Text: star, Style: hl(th.key)},
 		vaxis.Segment{Text: pad(truncate(label, room), room), Style: hl(labelStyle)})
 }
@@ -283,12 +294,16 @@ func (a *app) drawRow(win vaxis.Window, y int, r row, selected bool, cw int) {
 func (a *app) drawPane(win vaxis.Window, w, h int) {
 	title := win.New(sideW+1, 0, w-sideW-1, titleH)
 	t := a.terms[a.active]
+	waiting := ""
+	if len(a.attn) > 0 {
+		waiting = fmt.Sprintf("◆ %d waiting [f] ", len(a.attn))
+	}
 	if t == nil {
-		a.titleBar(title, " CLAUDE", "", false)
+		a.titleBar(title, " CLAUDE", waiting, false)
 		a.drawIdle(win.New(sideW+1, titleH, w-sideW-1, h-titleH))
 		return
 	}
-	a.titleBar(title, " "+a.activeTitle(), "", a.inTerm)
+	a.titleBar(title, " "+a.titleOf(a.active), waiting, a.inTerm)
 	pw, ph := a.paneSize()
 	t.Resize(pw, ph)
 	t.Draw(win.New(sideW+1, titleH, pw, ph))
@@ -560,14 +575,75 @@ func (a *app) drawSearch(win vaxis.Window) {
 	}
 }
 
-// activeTitle names the open session for the pane's title bar.
-func (a *app) activeTitle() string {
+// titleOf names session id for the pane's title bar and notifications.
+func (a *app) titleOf(id string) string {
 	for _, p := range a.projects {
 		for _, s := range p.sessions {
-			if s.ID == a.active {
+			if s.ID == id {
 				return p.Name + " › " + s.Title + " (" + s.short() + ")"
 			}
 		}
 	}
-	return a.active
+	return id
+}
+
+// waiting counts p's sessions that rang for attention.
+func (a *app) waiting(p *project) int {
+	n := 0
+	for _, s := range p.sessions {
+		if slices.Contains(a.attn, s.ID) {
+			n++
+		}
+	}
+	return n
+}
+
+// drawSettings overlays the settings dialog, with the issues of the last
+// config.yaml edit below the rows.
+func (a *app) drawSettings(win vaxis.Window) {
+	st := a.set
+	if st == nil {
+		return
+	}
+	th := a.th
+	extra := 0
+	if len(st.issues) > 0 {
+		extra = len(st.issues) + 2 // blank, heading
+	}
+	// as tall as the add-project dialog so it covers the idle logo, taller when issues need it
+	box, on := a.dialog(win, " SETTINGS", 84, max(addListH+8, titleH+settingRows+3+extra))
+	bw, bh := box.Size()
+	hints := "☐"
+	if a.st.HideHints {
+		hints = "☑"
+	}
+	editor := cmp.Or(os.Getenv("VISUAL"), os.Getenv("EDITOR"), "vi")
+	rows := [settingRows][2]string{
+		setTheme: {"Theme", "‹ " + cmp.Or(a.cfg.Theme, defaultTheme) + " ›"},
+		setHints: {"Hide hints", hints},
+		setEdit:  {"Edit config.yaml", "in " + editor + ", checked on save"},
+	}
+	for i, r := range rows {
+		base, label, mark := on(th.base), on(th.key), "   "
+		if i == st.sel {
+			base, label, mark = th.sel, th.sel, " › "
+		}
+		box.PrintTruncate(titleH+1+i,
+			vaxis.Segment{Text: mark, Style: base},
+			vaxis.Segment{Text: pad(r[0], 18), Style: label},
+			vaxis.Segment{Text: pad(r[1], bw-21), Style: base})
+	}
+	hint := "[↑↓] pick  [←→/⏎] change  [e] edit config  [Esc] close"
+	if len(st.issues) > 0 {
+		y := titleH + settingRows + 2
+		box.PrintTruncate(y, vaxis.Segment{Text: fmt.Sprintf(" ✗ config.yaml: %d issue(s); the config before the edit is still in use", len(st.issues)), Style: on(th.err)})
+		for i, is := range st.issues {
+			if y+1+i >= bh-1 { // screen too short: keep the footer
+				break
+			}
+			box.PrintTruncate(y+1+i, vaxis.Segment{Text: "   " + truncate(is, bw-4), Style: on(th.base)})
+		}
+		hint = "[e] edit again  [Esc] keep old config"
+	}
+	box.PrintTruncate(bh-1, append([]vaxis.Segment{{Text: " ", Style: th.muted}}, a.hintSegs(hint)...)...)
 }
