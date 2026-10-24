@@ -1,11 +1,7 @@
 package main
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -15,18 +11,18 @@ import (
 
 // palette is a theme as hex colors ("#rrggbb"); "" means the terminal default.
 type palette struct {
-	Bg      string `json:"bg"`      // sidebar and title bar background
-	Fg      string `json:"fg"`      // session titles
-	Muted   string `json:"muted"`   // dirs, ids, hints, separator, scrollbar track
-	Project string `json:"project"` // project names
-	SelBg   string `json:"selBg"`   // cursor row; "" falls back to reverse video
-	SelFg   string `json:"selFg"`
-	Key     string `json:"key"`     // [shortcut] labels
-	Running string `json:"running"` // ● running session mark
-	Thumb   string `json:"thumb"`   // scrollbar thumb
-	Error   string `json:"error"`
-	TitleBg string `json:"titleBg"` // focused panel's title bar
-	TitleFg string `json:"titleFg"`
+	Bg      string `yaml:"bg"`      // sidebar and title bar background
+	Fg      string `yaml:"fg"`      // session titles
+	Muted   string `yaml:"muted"`   // dirs, ids, hints, separator, scrollbar track
+	Project string `yaml:"project"` // project names
+	SelBg   string `yaml:"selBg"`   // cursor row; "" falls back to reverse video
+	SelFg   string `yaml:"selFg"`
+	Key     string `yaml:"key"`     // [shortcut] labels
+	Running string `yaml:"running"` // ● running session mark
+	Thumb   string `yaml:"thumb"`   // scrollbar thumb
+	Error   string `yaml:"error"`
+	TitleBg string `yaml:"titleBg"` // focused panel's title bar
+	TitleFg string `yaml:"titleFg"`
 }
 
 var themes = map[string]palette{
@@ -40,26 +36,9 @@ var themes = map[string]palette{
 
 const defaultTheme = "dracula"
 
-type config struct {
-	Theme  string             `json:"theme"`
-	Themes map[string]palette `json:"themes"` // user themes; empty fields inherit from dracula
-}
-
-func configPath() string { return filepath.Join(filepath.Dir(projectsPath()), "config.json") }
-
-// loadTheme reads config.json and resolves the selected theme. On any problem it
-// returns dracula plus an error to show, so a bad config never blocks startup.
-func loadTheme(path string) (theme, error) {
-	var cfg config
-	b, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return mustTheme(themes[defaultTheme]), err
-	}
-	if len(b) > 0 {
-		if err := json.Unmarshal(b, &cfg); err != nil {
-			return mustTheme(themes[defaultTheme]), fmt.Errorf("config.json: %w", err)
-		}
-	}
+// loadTheme resolves the theme selected in cfg. On any problem it returns
+// dracula plus an error to show, so a bad theme never blocks startup.
+func loadTheme(cfg config) (theme, error) {
 	name := cfg.Theme
 	if name == "" {
 		name = defaultTheme

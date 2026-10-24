@@ -99,31 +99,63 @@ All files live in `~/.config/cade/` (`$XDG_CONFIG_HOME/cade/` if set; on macOS
 |---|---|---|
 | `projects.json` | cade | projects, their order and collapsed state |
 | `state.json` | cade | remembered UI state (hints hidden) |
-| `config.json` | you | theme |
+| `config.yaml` | you | theme, Claude accounts |
 
 ### Themes
 
 Dracula is the default. Built-in themes are `dracula` and `terminal` (your terminal's own colours).
 
-```json
-{ "theme": "dracula" }
+```yaml
+theme: dracula
 ```
 
 Define your own; fields you leave out come from Dracula:
 
-```json
-{
-  "theme": "mine",
-  "themes": {
-    "mine": { "key": "#50fa7b", "titleBg": "#ff79c6" }
-  }
-}
+```yaml
+theme: mine
+themes:
+  mine: { key: "#50fa7b", titleBg: "#ff79c6" }
 ```
 
 Colour fields, as `#rrggbb`: `bg`, `fg`, `muted`, `project`, `selBg`, `selFg`, `key`, `running`,
 `thumb`, `error`, `titleBg`, `titleFg`. A bad config falls back to Dracula and shows the error in
 the sidebar. The config is read at startup. Themes colour cade's own panels only; the Claude pane
 uses Claude's `/theme`.
+
+`config.json` from older versions is no longer read. JSON is valid YAML, so renaming it to
+`config.yaml` is enough.
+
+### Claude accounts
+
+Without a `claude` section, cade runs plain `claude`. Accounts let you run claude through a wrapper
+such as firejail, or use more than one Claude login:
+
+```yaml
+claude:
+  default: personal          # may be left out when there is one account
+  accounts:
+    personal:
+      command: [firejail, --quiet, --read-only=/, --read-write=$PWD,
+                --profile=$HOME/.config/firejail/claude.profile,
+                claude, --dangerously-skip-permissions]
+      env: { ANTHROPIC_BASE_URL: "http://localhost:8787" }
+    work:
+      command: [claude-firejail.sh]
+      configDir: ~/.claude-work
+      dirs: [~/www/client-a, ~/www/client-b]
+```
+
+| Field | Meaning |
+|---|---|
+| `command` | program and flags; cade appends `--session-id <id>` or `--resume <id>`. Default `claude` |
+| `configDir` | passed as `CLAUDE_CONFIG_DIR`; cade reads this account's sessions from it. Default `~/.claude` |
+| `env` | extra environment variables |
+| `dirs` | projects in these directories use this account; the deepest match wins, others use `default` |
+
+Values may use a leading `~`, `$VAR` and `$PWD` (the project directory). No shell runs, so `~` in
+the middle of a flag is not expanded: use `$HOME`. cade refuses to start if the file is invalid
+(unknown fields included) or an account's program is not on `PATH`, so it never falls back to
+plain `claude` quietly.
 
 ## Development
 
@@ -148,7 +180,8 @@ All Go commands run in Docker through `compose.yaml`. `make bump` runs on the ho
 | `cmd/cade/main.go` | app: event loop, sidebar, Claude pane, dialogs |
 | `cmd/cade/sessions.go` | reading sessions and titles from `~/.claude/projects` |
 | `cmd/cade/projects.go` | project list and state files |
-| `cmd/cade/theme.go` | themes and `config.json` |
+| `cmd/cade/theme.go` | themes |
+| `cmd/cade/config.go` | `config.yaml` and Claude accounts |
 | `third_party/vaxis` | vendored [Vaxis](https://git.sr.ht/~rockorager/vaxis) v0.17.1 |
 
 Vaxis is vendored (via a `replace` in `go.mod`) for one added file,

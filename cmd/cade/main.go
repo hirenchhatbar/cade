@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,6 +61,7 @@ type app struct {
 	home    string
 	cwd     string
 	cfgPath string
+	cfg     config
 	th      theme
 	st      state           // remembered UI state
 	pending map[string]bool // started from cade, jsonl may not exist yet
@@ -84,9 +86,21 @@ func main() {
 	}
 	cwd, _ := os.Getwd()
 	home, _ := os.UserHomeDir()
-	if _, err := exec.LookPath("claude"); err != nil {
-		fmt.Fprintln(os.Stderr, "cade: claude not found in PATH")
+	cfg, err := loadConfig(configPath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cade: %s: %v\n", configPath(), err)
 		os.Exit(1)
+	}
+	accs := []account{{}} // plain claude when no accounts are configured
+	if len(cfg.Claude.Accounts) > 0 {
+		accs = slices.Collect(maps.Values(cfg.Claude.Accounts))
+	}
+	for _, acc := range accs {
+		bin := acc.argv(home, cwd)[0]
+		if _, err := exec.LookPath(bin); err != nil {
+			fmt.Fprintf(os.Stderr, "cade: %s not found in PATH\n", bin)
+			os.Exit(1)
+		}
 	}
 	cfgPath := projectsPath()
 	projects, err := loadProjects(cfgPath)
@@ -106,11 +120,14 @@ func main() {
 		fmt.Fprintln(os.Stderr, "cade:", err)
 		os.Exit(1)
 	}
-	a := &app{tree: tree{projects: projects}, vx: vx, home: home, cwd: cwd, cfgPath: cfgPath,
+	a := &app{tree: tree{projects: projects}, vx: vx, home: home, cwd: cwd, cfgPath: cfgPath, cfg: cfg,
 		st: loadState(statePath()), pending: map[string]bool{}, terms: map[string]*term.Model{}}
 	var themeErr error
-	a.th, themeErr = loadTheme(configPath())
+	a.th, themeErr = loadTheme(cfg)
 	a.fail("", themeErr)
+	if _, err := os.Stat(filepath.Join(filepath.Dir(configPath()), "config.json")); err == nil {
+		a.msg = "config.json is no longer read: rename it to config.yaml"
+	}
 	a.refresh()
 	if i := slices.IndexFunc(a.rows(), func(r row) bool { return r.s == rowHeader && a.projects[r.p].Dir == cwd }); i >= 0 {
 		a.cursor = i
@@ -170,7 +187,7 @@ Options:
 Files in ` + filepath.Dir(projectsPath()) + `:
   projects.json  projects, their order and collapsed state (written by cade)
   state.json     remembered UI state (written by cade)
-  config.json    theme, e.g. {"theme": "dracula"} (edited by you)
+  config.yaml    theme and claude accounts (edited by you)
 `
 }
 
@@ -251,8 +268,7 @@ func (a *app) open() {
 	if _, ok := a.terms[key]; !ok {
 		t := term.New(term.WithVaxis(a.vx))
 		t.Attach(a.vx.PostEvent)
-		cmd := exec.Command("claude", args...)
-		cmd.Dir = p.Dir
+		cmd := a.account(p).cmd(a.home, p.Dir, args...)
 		w, h := a.paneSize()
 		if err := t.StartWithSize(cmd, w, h); err != nil {
 			a.fail("claude: ", err)
@@ -274,7 +290,7 @@ func (a *app) refresh() {
 		k = a.keyOf(rows[a.cursor])
 	}
 	for _, p := range a.projects {
-		p.sessions = merge(p.sessions, loadSessions(a.home, p.Dir), a.pending)
+		p.sessions = merge(p.sessions, loadSessions(a.root(p), p.Dir), a.pending)
 	}
 	a.restore(k)
 }
@@ -282,7 +298,7 @@ func (a *app) refresh() {
 func (a *app) deleteSession(p *project, id string) {
 	a.closeTerm(id)
 	delete(a.pending, id)
-	if err := deleteSessionFiles(a.home, p.Dir, id); err != nil {
+	if err := deleteSessionFiles(a.root(p), p.Dir, id); err != nil {
 		a.fail("delete failed: ", err)
 		return
 	}
@@ -298,6 +314,11 @@ func (a *app) removeProject(p *project) {
 	a.save()
 	a.restore(rowKey{})
 }
+
+func (a *app) account(p *project) account { return a.cfg.account(p.Dir, a.home) }
+
+// root is where p's account keeps its sessions.
+func (a *app) root(p *project) string { return a.account(p).sessionsRoot(a.home) }
 
 func (a *app) closeTerm(id string) {
 	if t := a.terms[id]; t != nil {

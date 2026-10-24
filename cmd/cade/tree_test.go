@@ -71,7 +71,7 @@ func TestDelete(t *testing.T) {
 		{Name: "a", Dir: "/a", sessions: []session{{ID: "s1", Title: "one"}, {ID: "s2"}}},
 		{Name: "b", Dir: "/b"},
 	}
-	dir := projectDir(tmp, "/a")
+	dir := projectDir(filepath.Join(tmp, ".claude"), "/a")
 	os.MkdirAll(filepath.Join(dir, "s1", "tool-results"), 0o755)
 	os.WriteFile(filepath.Join(dir, "s1.jsonl"), []byte("{}"), 0o644)
 	os.WriteFile(filepath.Join(dir, "s2.jsonl"), []byte("{}"), 0o644)

@@ -22,8 +22,8 @@ type session struct {
 func (s session) short() string { return s.ID[:min(8, len(s.ID))] }
 
 // deleteSessionFiles removes a session's transcript and its per-session folder.
-func deleteSessionFiles(home, cwd, id string) error {
-	base := filepath.Join(projectDir(home, cwd), id)
+func deleteSessionFiles(root, cwd, id string) error {
+	base := filepath.Join(projectDir(root, cwd), id)
 	if err := os.Remove(base + ".jsonl"); err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -59,14 +59,15 @@ func merge(shown, loaded []session, pending map[string]bool) []session {
 
 var nonAlnum = regexp.MustCompile(`[^A-Za-z0-9]`)
 
-// projectDir mirrors how Claude Code names ~/.claude/projects/<dir>.
-func projectDir(home, cwd string) string {
-	return filepath.Join(home, ".claude", "projects", nonAlnum.ReplaceAllString(cwd, "-"))
+// projectDir mirrors how Claude Code names <root>/projects/<dir>, root being
+// ~/.claude or CLAUDE_CONFIG_DIR.
+func projectDir(root, cwd string) string {
+	return filepath.Join(root, "projects", nonAlnum.ReplaceAllString(cwd, "-"))
 }
 
 // loadSessions lists sessions for cwd, newest first.
-func loadSessions(home, cwd string) []session {
-	files, _ := filepath.Glob(filepath.Join(projectDir(home, cwd), "*.jsonl"))
+func loadSessions(root, cwd string) []session {
+	files, _ := filepath.Glob(filepath.Join(projectDir(root, cwd), "*.jsonl"))
 	sort.Slice(files, func(i, j int) bool { return modTime(files[i]) > modTime(files[j]) })
 	out := make([]session, 0, len(files))
 	for _, f := range files {
