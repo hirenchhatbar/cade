@@ -179,3 +179,49 @@ func TestGrid(t *testing.T) {
 		t.Fatalf("got\n%s", strings.Join(lines, "\n"))
 	}
 }
+
+func TestAddProjectDirPicker(t *testing.T) {
+	tmp := t.TempDir()
+	for _, d := range []string{"web/cade-app", "web/other", "web/.hidden", "notes"} {
+		os.MkdirAll(filepath.Join(tmp, d), 0o755)
+	}
+	os.WriteFile(filepath.Join(tmp, "web", "file"), nil, 0o644)
+	a := &app{cfgPath: filepath.Join(tmp, "projects.json"), home: tmp, cwd: tmp, pending: map[string]bool{}}
+	a.projects = []*project{{Name: "a", Dir: "/a"}}
+	a.openAdd()
+	keys := func(ks ...vaxis.Key) {
+		for _, k := range ks {
+			a.promptKey(k)
+		}
+	}
+	names := func() (out []string) {
+		for _, m := range a.matches() {
+			out = append(out, m.item)
+		}
+		return out
+	}
+	keys(vaxis.Key{Keycode: vaxis.KeyEnter})
+	if a.input.dir != "~/" || strings.Join(names(), ",") != "notes,web" {
+		t.Fatalf("start dir %q lists %v", a.input.dir, names())
+	}
+	keys(vaxis.Key{Text: "w"}, vaxis.Key{Keycode: vaxis.KeyTab})
+	if a.input.dir != "~/web/" || strings.Join(names(), ",") != "cade-app,other" {
+		t.Fatalf("tab: dir %q lists %v", a.input.dir, names())
+	}
+	keys(vaxis.Key{Keycode: vaxis.KeyTab, Modifiers: vaxis.ModShift}, vaxis.Key{Text: "n"})
+	if a.input.step != 0 || a.input.name != "n" {
+		t.Fatalf("shift+tab should go back to the name: %+v", a.input)
+	}
+	keys(vaxis.Key{Keycode: vaxis.KeyTab}, vaxis.Key{Keycode: vaxis.KeyUp}, vaxis.Key{Keycode: vaxis.KeyDown})
+	if a.input.step != 1 || a.input.name != "n" {
+		t.Fatalf("up on the top row, then down, should land back on the directory: %+v", a.input)
+	}
+	keys(vaxis.Key{Text: "h", Modifiers: vaxis.ModAlt})
+	if !a.input.hidden || len(names()) != 3 {
+		t.Fatalf("alt+h: %v", names())
+	}
+	keys(vaxis.Key{Text: "o"}, vaxis.Key{Text: "t"}, vaxis.Key{Keycode: vaxis.KeyDown}, vaxis.Key{Keycode: vaxis.KeyEnter})
+	if a.input != nil || a.projects[1].Dir != filepath.Join(tmp, "web", "other") || a.projects[1].Name != "n" {
+		t.Fatalf("partial name should add the match: input=%+v projects=%+v", a.input, a.projects)
+	}
+}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -43,8 +44,8 @@ var sidebarKeys = []binding{
 	{label: "←/→", keys: []string{"Left"}, hint: "fold", help: "collapse / expand project",
 		run: func(a *app) { a.foldSaved(true) }},
 	{keys: []string{"Right"}, run: func(a *app) { a.foldSaved(false) }},
-	{label: "a", keys: []string{"a"}, hint: "add project", help: "add project (name, then directory)",
-		run: func(a *app) { a.input = &prompt{} }},
+	{label: "a", keys: []string{"a"}, hint: "add project", help: "add project (name, then directory; ⇥ opens a match)",
+		run: (*app).openAdd},
 	{label: "⇧PgUp/Dn", keys: []string{"Shift+Page_Up"}, hint: "reorder", help: "move project up / down",
 		run: func(a *app) { a.moveSaved(-1) }},
 	{keys: []string{"Shift+Page_Down"}, run: func(a *app) { a.moveSaved(1) }},
@@ -279,26 +280,71 @@ func (a *app) confirmProject() {
 	}
 }
 
-// promptKey edits the add-project form; promptLines below renders it.
+// openAdd opens the add-project dialog on the name, the directory prefilled with cade's own.
+func (a *app) openAdd() {
+	a.input = &prompt{dir: strings.TrimSuffix(a.short(a.cwd), "/") + "/"}
+}
+
+// split cuts the typed directory into the parent being listed and the query after the last /.
+func (in *prompt) split() (parent, query string) {
+	i := strings.LastIndex(in.dir, "/")
+	return in.dir[:i+1], in.dir[i+1:]
+}
+
+// matches lists the typed parent's subdirectories that fuzzy-match the query, best first.
+// The listing is cached until the parent changes.
+func (a *app) matches() []fuzzyMatch[string] {
+	in := a.input
+	parent, query := in.split()
+	if in.subs == nil || in.listed != parent {
+		dir := parent
+		if strings.HasPrefix(dir, "~/") {
+			dir = filepath.Join(a.home, dir[2:])
+		}
+		in.subs, in.listed = subdirs(cmp.Or(dir, "."), in.hidden), parent
+	}
+	return fuzzyFilter(query, in.subs, func(s string) string { return s })
+}
+
+// promptKey edits the add-project dialog; drawAdd renders it.
 func (a *app) promptKey(k vaxis.Key) {
 	in := a.input
 	field := &in.name
-	if in.step == 1 {
+	ms := a.matches()
+	in.sel = max(min(in.sel, len(ms)-1), 0)
+	dirStep := in.step == 1
+	if dirStep {
 		field = &in.dir
 	}
 	switch {
 	case k.MatchString("Escape"):
 		a.input = nil
+	case !dirStep && (k.MatchString("Enter") || k.MatchString("Tab") || k.MatchString("Down")):
+		in.step = 1
+	case dirStep && (k.MatchString("Shift+Tab") || in.sel == 0 && k.MatchString("Up")):
+		in.step = 0
+	case dirStep && (k.MatchString("Down") || k.MatchString("Ctrl+n")):
+		in.sel = max(min(in.sel+1, len(ms)-1), 0)
+	case dirStep && (k.MatchString("Up") || k.MatchString("Ctrl+p")):
+		in.sel = max(in.sel-1, 0)
+	case dirStep && k.MatchString("Tab"):
+		if len(ms) > 0 {
+			parent, _ := in.split()
+			in.dir, in.sel, in.err = parent+ms[in.sel].item+"/", 0, ""
+		}
+	case dirStep && k.MatchString("Alt+h"):
+		in.hidden, in.subs, in.sel = !in.hidden, nil, 0
 	case k.MatchString("BackSpace"):
 		if r := []rune(*field); len(r) > 0 {
 			*field = string(r[:len(r)-1])
 		}
+		in.sel = 0
 	case k.MatchString("Enter"):
-		if in.step == 0 {
-			in.step, in.dir = 1, a.cwd
-			return
+		path := in.dir
+		if parent, query := in.split(); query != "" && len(ms) > 0 {
+			path = parent + ms[in.sel].item // a partly typed name means the highlighted match
 		}
-		dir, err := expandDir(in.dir, a.home)
+		dir, err := expandDir(path, a.home)
 		if err == nil && slices.ContainsFunc(a.projects, func(p *project) bool { return p.Dir == dir }) {
 			err = fmt.Errorf("already added")
 		}
@@ -317,24 +363,6 @@ func (a *app) promptKey(k vaxis.Key) {
 		a.cursor = slices.Index(a.rows(), row{len(a.projects) - 1, rowHeader})
 	case k.Text != "" && k.Modifiers&(vaxis.ModCtrl|vaxis.ModAlt|vaxis.ModSuper) == 0:
 		*field += k.Text
-		in.err = ""
+		in.err, in.sel = "", 0
 	}
-}
-
-func (a *app) promptLines() []string {
-	in := a.input
-	field := func(label, s string) string {
-		return label + truncateLeft(s, sideW-10) + "▏" // ▏ marks the field being typed
-	}
-	if in.step == 0 {
-		return withErr([]string{"Add project  [⏎] next  [Esc] cancel", field("Name: ", in.name)}, in.err)
-	}
-	return withErr([]string{"Add project  [⏎] save  [Esc] cancel", "Name: " + truncateLeft(in.name, sideW-10), field("Dir:  ", in.dir)}, in.err)
-}
-
-func withErr(lines []string, err string) []string {
-	if err != "" {
-		lines = append(lines, "✗ "+err)
-	}
-	return lines
 }

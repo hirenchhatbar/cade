@@ -162,6 +162,7 @@ func (a *app) draw() {
 	}
 	a.drawPane(win, w, h)
 	a.drawHelp(win)
+	a.drawAdd(win)
 	a.vx.Render()
 }
 
@@ -170,8 +171,6 @@ func (a *app) sidebarHints() []string {
 	switch {
 	case a.confirm != nil:
 		return append(slices.Clone(a.confirm.lines), confirmHint)
-	case a.input != nil:
-		return a.promptLines()
 	case a.inTerm:
 		return grid(a.hintPairs(paneKeys, false), sideW-1)
 	default:
@@ -182,7 +181,7 @@ func (a *app) sidebarHints() []string {
 func (a *app) drawSidebar(side vaxis.Window) {
 	th := a.th
 	side.Fill(cell(" ", th.base))
-	a.titleBar(side, " SESSIONS", appLabel+" ", !a.inTerm)
+	a.titleBar(side, " SESSIONS", "Cade v"+version+" ", !a.inTerm)
 	_, sh := side.Size()
 	tree := side.New(0, titleH, sideW, sh-titleH)
 	_, treeH := tree.Size()
@@ -384,16 +383,8 @@ func (a *app) drawHelp(win vaxis.Window) {
 	for _, l := range lines {
 		keyW, textW = max(keyW, runeLen(l[0])+2), max(textW, runeLen(l[1]))
 	}
-	w, h := win.Size()
-	bw, bh := min(3+keyW+1+textW+2, w), min(len(lines)+2*titleH+2, h)
-	box := win.New((w-bw)/2, (h-bh)/2, bw, bh)
-	panel := th.base
-	if panel.Background == 0 {
-		panel = th.sel // terminal theme: reverse video so the dialog stands out
-	}
-	on := func(s vaxis.Style) vaxis.Style { s.Background = panel.Background; return s }
-	box.Fill(cell(" ", panel))
-	a.titleBar(box, " SHORTCUTS", appLabel+" ", true)
+	box, on := a.dialog(win, " SHORTCUTS", 3+keyW+1+textW+2, len(lines)+2*titleH+2)
+	_, bh := box.Size()
 	for i, l := range lines {
 		y := titleH + 1 + i
 		if y >= bh-1 {
@@ -409,7 +400,92 @@ func (a *app) drawHelp(win vaxis.Window) {
 			vaxis.Segment{Text: "   " + pad("["+l[0]+"]", keyW+1), Style: on(th.key)},
 			vaxis.Segment{Text: l[1], Style: on(th.base)})
 	}
-	box.PrintTruncate(bh-1, vaxis.Segment{Text: pad(" any key to close", bw), Style: th.muted})
+	box.PrintTruncate(bh-1, vaxis.Segment{Text: " any key to close", Style: th.muted})
+}
+
+// dialog fills a centered bw×bh box (shrunk to fit win) with a title bar. on puts a
+// style on the box's background.
+func (a *app) dialog(win vaxis.Window, title string, bw, bh int) (box vaxis.Window, on func(vaxis.Style) vaxis.Style) {
+	w, h := win.Size()
+	bw, bh = min(bw, w), min(bh, h)
+	box = win.New((w-bw)/2, (h-bh)/2, bw, bh)
+	panel := a.th.base
+	if panel.Background == 0 {
+		panel = a.th.sel // terminal theme: reverse video so the dialog stands out
+	}
+	box.Fill(cell(" ", panel))
+	a.titleBar(box, title, "", true)
+	return box, func(s vaxis.Style) vaxis.Style { s.Background = panel.Background; return s }
+}
+
+const addListH = 14 // directory rows in the add-project dialog
+
+// drawAdd overlays the add-project dialog: the name, then the directory with the
+// typed parent's subdirectories fuzzy-matched below it.
+func (a *app) drawAdd(win vaxis.Window) {
+	in := a.input
+	if in == nil {
+		return
+	}
+	th := a.th
+	box, on := a.dialog(win, " ADD PROJECT", 84, addListH+8) // wide enough to cover the idle logo, centered in the pane, not the screen
+	bw, bh := box.Size()
+	field := func(y int, label, val string, typing bool) {
+		labelStyle := th.muted
+		if typing {
+			labelStyle = th.key
+		}
+		segs := []vaxis.Segment{{Text: " " + label, Style: on(labelStyle)}, {Text: truncateLeft(val, bw-9), Style: on(th.base)}}
+		if typing {
+			segs = append(segs, vaxis.Segment{Text: "▏", Style: on(th.key)}) // ▏ marks the field being typed
+		}
+		box.PrintTruncate(y, segs...)
+	}
+	field(titleH+1, "Name: ", in.name, in.step == 0)
+	field(titleH+2, "Dir:  ", in.dir, in.step == 1)
+	ms := a.matches()
+	sel := max(min(in.sel, len(ms)-1), 0)
+	listH := max(bh-titleH-6, 1) // name, dir, blank, blank, error, footer
+	top := max(sel-listH+1, 0)
+	for i := top; i < min(len(ms), top+listH); i++ {
+		a.drawMatch(box, titleH+4+i-top, bw, ms[i], i == sel && in.step == 1, on)
+	}
+	if len(ms) == 0 {
+		box.PrintTruncate(titleH+4, vaxis.Segment{Text: "   no matching directories", Style: on(th.muted)})
+	}
+	hint := "[⏎/⇥/↓] directory  [Esc] cancel"
+	if in.step == 1 {
+		tick := "☐"
+		if in.hidden {
+			tick = "☑"
+		}
+		hint = "[⇥] open  [↑↓] pick  [⇧⇥] name  [⏎] add  [Alt+h] " + tick + " hidden  [Esc] cancel"
+	}
+	if in.err != "" {
+		box.PrintTruncate(bh-2, vaxis.Segment{Text: " ✗ " + in.err, Style: on(th.err)})
+	}
+	box.PrintTruncate(bh-1, append([]vaxis.Segment{{Text: " ", Style: th.muted}}, a.hintSegs(hint)...)...)
+}
+
+// drawMatch draws one directory row, the fuzzy-matched letters bold and underlined.
+func (a *app) drawMatch(box vaxis.Window, y, bw int, m fuzzyMatch[string], selected bool, on func(vaxis.Style) vaxis.Style) {
+	base, mark := on(a.th.base), "   "
+	if selected {
+		base, mark = a.th.sel, " › "
+	}
+	hit := base
+	hit.Attribute |= vaxis.AttrBold
+	hit.UnderlineStyle = vaxis.UnderlineSingle
+	segs := []vaxis.Segment{{Text: mark, Style: base}}
+	for i, r := range []rune(m.item) {
+		s := base
+		if slices.Contains(m.pos, i) {
+			s = hit
+		}
+		segs = append(segs, vaxis.Segment{Text: string(r), Style: s})
+	}
+	segs = append(segs, vaxis.Segment{Text: pad("/", bw-runeLen(mark+m.item)), Style: base})
+	box.PrintTruncate(y, segs...)
 }
 
 // activeTitle names the open session for the pane's title bar.

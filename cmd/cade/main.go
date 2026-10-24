@@ -42,11 +42,16 @@ type clearSel struct {
 	seq int
 }
 
-// prompt is the add-project form; step 0 asks the name, step 1 the directory.
+// prompt is the add-project dialog; step 0 asks the name, step 1 the directory,
+// with the subdirectories of the typed path fuzzy-matched below it.
 type prompt struct {
 	step      int
 	name, dir string
 	err       string
+	hidden    bool     // list dot-directories too
+	sel       int      // highlighted match
+	listed    string   // typed parent that subs was read for
+	subs      []string // nil = not read yet
 }
 
 // confirmation is a pending yes/no question; yes runs on y.

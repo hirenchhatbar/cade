@@ -64,7 +64,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `l/⏎` | open session (click works too; new one on a project row) |
 | `n` | new session in this project |
 | `←/→` | collapse / expand project |
-| `a` | add project (name, then directory) |
+| `a` | add project (name, then directory; ⇥ opens a match) |
 | `⇧PgUp/Dn` | move project up / down |
 | `d/dd` | d: delete session from disk · dd: remove project from list (both ask) |
 | `g/G` | top / end |

@@ -69,6 +69,25 @@ func writeJSON(path string, v any) error {
 	return os.Rename(tmp, path)
 }
 
+// subdirs lists the directory names in dir (symlinks to directories too), sorted;
+// dot-directories only when hidden. An unreadable dir lists what it can, never nil.
+func subdirs(dir string, hidden bool) []string {
+	es, _ := os.ReadDir(dir)
+	out := []string{}
+	for _, e := range es {
+		name := e.Name()
+		if !hidden && strings.HasPrefix(name, ".") {
+			continue
+		}
+		if e.IsDir() {
+			out = append(out, name)
+		} else if st, err := os.Stat(filepath.Join(dir, name)); err == nil && e.Type()&os.ModeSymlink != 0 && st.IsDir() {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 // expandDir resolves user input (~, relative paths) to an existing absolute directory.
 func expandDir(in, home string) (string, error) {
 	in = strings.TrimSpace(in)
