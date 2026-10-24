@@ -53,6 +53,12 @@ func TestSidebarKeysRoute(t *testing.T) {
 	if a.help {
 		t.Fatal("any key should close help")
 	}
+	// kitty protocol reports ? as Shift+/, which vaxis also matches against "/"
+	press(vaxis.Key{Keycode: '/', ShiftedCode: '?', Modifiers: vaxis.ModShift, Text: "?"})
+	if !a.help || a.search != nil {
+		t.Fatalf("Shift+/: help %v search %v", a.help, a.search)
+	}
+	press(vaxis.Key{Keycode: 'x', Text: "x"})
 	if a.key(vaxis.Key{Keycode: 'q', Text: "q"}) != true {
 		t.Fatal("q should quit")
 	}

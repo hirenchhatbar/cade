@@ -96,13 +96,21 @@ func hasScrollback(a *app) bool {
 
 // match returns the active binding for k, or nil.
 func (a *app) match(bs []binding, k vaxis.Key) *binding {
+	var loose *binding
 	for i := range bs {
 		b := &bs[i]
-		if b.run != nil && (b.when == nil || b.when(a)) && slices.ContainsFunc(b.keys, k.MatchString) {
+		if b.run == nil || b.when != nil && !b.when(a) || !slices.ContainsFunc(b.keys, k.MatchString) {
+			continue
+		}
+		// Shift+/ also matches "/" in vaxis; the binding for the typed text ("?") wins
+		if k.Text == "" || slices.Contains(b.keys, k.Text) {
 			return b
 		}
+		if loose == nil {
+			loose = b
+		}
 	}
-	return nil
+	return loose
 }
 
 // key routes a key press; it reports whether cade should quit.
