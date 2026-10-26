@@ -20,13 +20,11 @@ const (
 	version  = "0.1.0"
 	appLabel = appName + " v" + version
 	sideW    = 42
-	barW     = 2        // scrollbar columns
-	focusKey = "Escape" // shortcut: hardcoded, make configurable once the key choice settles
-	focusLbl = "Esc"
-	focusAlt = "F12"
-	// Esc leaves the pane, so Ctrl+Esc sends Claude its Esc; it needs the kitty keyboard protocol.
-	escKey    = "Ctrl+Escape"
-	escLbl    = "Ctrl+Esc"
+	barW     = 2             // scrollbar columns
+	focusKey = "Ctrl+Escape" // shortcut: hardcoded, make configurable once the key choice settles
+	focusLbl = "Ctrl+Esc"
+	// Ctrl+Esc needs the kitty keyboard protocol; legacy terminals send plain Esc, so F12 stays as fallback.
+	focusAlt  = "F12"
 	diffKey   = "F3"
 	shellKey  = "F2"
 	waitKey   = "Ctrl+f"
@@ -121,7 +119,8 @@ type app struct {
 	msg     string        // last error, shown above the hints
 	dWait   bool          // a first d was pressed, see ddWindow
 	dSeq    int
-	selSeq  int // bumped on every pane click, see clearSel
+	selSeq  int  // bumped on every pane click, see clearSel
+	pasting bool // inside a bracketed paste; drawing waits for its end
 	quit    bool
 }
 
@@ -239,10 +238,20 @@ Files in ` + filepath.Dir(projectsPath()) + `:
 
 func (a *app) run() {
 	for ev := range a.vx.Events() {
+		switch ev := ev.(type) {
+		case vaxis.PasteStartEvent:
+			a.pasting = true
+		case vaxis.PasteEndEvent:
+			a.pasting = false
+		case vaxis.Key:
+			a.pasting = a.pasting && ev.EventType == vaxis.EventPaste // a lost end marker can't freeze the screen
+		}
 		if quit := a.handle(ev); quit {
 			return
 		}
-		a.draw()
+		if !a.pasting { // a redraw per pasted key made pastes take ~1ms per character
+			a.draw()
+		}
 	}
 }
 

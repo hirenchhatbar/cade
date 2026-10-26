@@ -65,7 +65,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `l/⏎` | open session (click works too; new one on a project row) |
 | `n` | new session in this project |
 | `/` | fuzzy search session titles, all projects |
-| `←/→` | collapse / expand project |
+| `←/→` | collapse / expand project (`→` on a session opens it) |
 | `a` | add project (name, then directory; ⇥ opens a match) |
 | `⇧PgUp/Dn` | move project up / down |
 | `r` | rename session (empty = Claude's title) |
@@ -82,11 +82,10 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 
 | Key | Action |
 |---|---|
-| `Esc` | switch sidebar ↔ pane (also F12) |
+| `Ctrl+Esc` | switch sidebar ↔ pane (also F12) |
 | `F3` | git diff of the session's project, sidebar too; s: side by side ↔ unified |
 | `F2` | shell in the project's directory over the pane, sidebar too; again goes back |
 | `Ctrl+F` | focus next waiting session (◆), oldest first, sidebar too |
-| `Ctrl+Esc` | send Esc to Claude (interrupt) |
 | `⇧PgUp/Dn` | scroll back / forward (PgUp/PgDn too) |
 | `wheel` | scroll; or drag the scrollbar |
 | `drag` | select text, 2×click word, 3×click line → copied |
@@ -233,4 +232,4 @@ scrollbar. To upgrade Vaxis, copy the new release into `third_party/vaxis` and k
   misalign a row.
 - If you switch sessions inside a pane with `/resume` or `/clear`, the sidebar still shows the
   session the pane was opened with.
-- `Ctrl+Esc` needs the kitty keyboard protocol; without it Claude cannot get an Esc.
+- `Ctrl+Esc` needs the kitty keyboard protocol; without it use `F12`.

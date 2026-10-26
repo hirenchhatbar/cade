@@ -44,9 +44,15 @@ var sidebarKeys = []binding{
 		run: (*app).newSession},
 	{label: "/", keys: []string{"/"}, hint: "search", help: "fuzzy search session titles, all projects",
 		run: func(a *app) { a.search = &searching{} }},
-	{label: "←/→", keys: []string{"Left"}, hint: "fold", help: "collapse / expand project",
+	{label: "←/→", keys: []string{"Left"}, hint: "fold", help: "collapse / expand project (→ on a session opens it)",
 		run: func(a *app) { a.foldSaved(true) }},
-	{keys: []string{"Right"}, run: func(a *app) { a.foldSaved(false) }},
+	{keys: []string{"Right"}, run: func(a *app) {
+		if a.current().s >= 0 {
+			a.open()
+		} else {
+			a.foldSaved(false)
+		}
+	}},
 	{label: "a", keys: []string{"a"}, hint: "add project", help: "add project (name, then directory; ⇥ opens a match)",
 		run: (*app).openAdd},
 	{label: "⇧PgUp/Dn", keys: []string{"Shift+Page_Up"}, hint: "reorder", help: "move project up / down",
@@ -61,7 +67,7 @@ var sidebarKeys = []binding{
 	{label: "g/G", keys: []string{"g", "Home"}, hint: "top/end", show: noPane, help: "top / end",
 		run: func(a *app) { a.cursor = 0 }},
 	{keys: []string{"G", "End"}, run: func(a *app) { a.cursor = len(a.rows()) - 1 }},
-	{label: "⇥", keys: []string{"Tab", "Escape"}, hint: "pane", show: hasPane, when: hasPane, help: "go to Claude pane",
+	{label: "⇥", keys: []string{"Tab"}, hint: "pane", show: hasPane, when: hasPane, help: "go to Claude pane",
 		run: func(a *app) { a.setFocus(true) }},
 	{label: ",", keys: []string{","}, hint: "settings", help: "settings: theme, hints, edit config.yaml in $EDITOR",
 		run: func(a *app) { a.set = &settings{} }},
@@ -85,8 +91,6 @@ var paneKeys = []binding{
 		run:  (*app).toggleShell},
 	{label: waitLbl, keys: []string{waitKey}, hint: "waiting", show: func(a *app) bool { return len(a.attn) > 0 },
 		help: "focus next waiting session (◆), oldest first, sidebar too", run: (*app).focusWaiting},
-	{label: escLbl, keys: []string{escKey}, help: "send Esc to Claude (interrupt)",
-		run: func(a *app) { a.terms[a.active].Update(vaxis.Key{Keycode: vaxis.KeyEsc}) }},
 	{label: "⇧PgUp/Dn", keys: []string{"Page_Up", "Shift+Page_Up"}, hint: "scroll", help: "scroll back / forward (PgUp/PgDn too)",
 		when: hasScrollback, run: func(a *app) { a.pageScroll(1) }},
 	{keys: []string{"Page_Down", "Shift+Page_Down"}, when: hasScrollback, run: func(a *app) { a.pageScroll(-1) }},
@@ -132,8 +136,14 @@ func (a *app) key(k vaxis.Key) bool {
 		}
 		return false
 	}
+	// pasted text is never a shortcut
+	paste := k.EventType == vaxis.EventPaste
+	if paste && a.inTerm && hasPane(a) {
+		a.terms[a.active].Update(k)
+		return false
+	}
 	// prompts and help keep Esc for cancel
-	if b := a.match(paneKeys[:4], k); b != nil && (a.inTerm || !a.help && a.confirm == nil && a.input == nil && a.rename == nil && a.search == nil && a.set == nil) {
+	if b := a.match(paneKeys[:4], k); b != nil && !paste && (a.inTerm || !a.help && a.confirm == nil && a.input == nil && a.rename == nil && a.search == nil && a.set == nil) {
 		if !release {
 			b.run(a)
 		}
@@ -168,7 +178,7 @@ func (a *app) key(k vaxis.Key) bool {
 		if !k.MatchString("d") {
 			a.dWait = false
 		}
-		if b := a.match(sidebarKeys, k); b != nil {
+		if b := a.match(sidebarKeys, k); b != nil && !paste {
 			b.run(a)
 		}
 	}
@@ -282,10 +292,33 @@ func (a *app) paneMouse(t *term.Model, ev vaxis.Mouse) {
 	t.Update(ev)
 	// cade captures the mouse, so the host terminal's copy-on-select can't run; do it here.
 	if ev.Button == vaxis.MouseLeftButton && ev.EventType == vaxis.EventRelease && t.HasSelection() {
-		a.vx.ClipboardPush(t.Selection())
+		a.vx.ClipboardPush(trimCopy(t.Selection()))
 		clear := clearSel{t, a.selSeq}
 		time.AfterFunc(selLinger, func() { a.vx.PostEvent(clear) })
 	}
+}
+
+// trimCopy drops trailing spaces from every line and the leading spaces all
+// non-blank lines share, so relative indentation survives.
+func trimCopy(s string) string {
+	lines := strings.Split(s, "\n")
+	indent := -1
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, " ")
+		if lines[i] == "" {
+			continue
+		}
+		n := len(lines[i]) - len(strings.TrimLeft(lines[i], " "))
+		if indent < 0 || n < indent {
+			indent = n
+		}
+	}
+	for i, l := range lines {
+		if l != "" {
+			lines[i] = l[indent:]
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 const confirmHint = "[y] yes  [n] no"

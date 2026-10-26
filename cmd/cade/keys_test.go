@@ -174,3 +174,28 @@ func TestShellToggle(t *testing.T) {
 		t.Fatalf("show again: active %q", a.active)
 	}
 }
+
+// Pasted text in the sidebar must not run shortcuts, e.g. q quitting.
+func TestPasteIsNotShortcut(t *testing.T) {
+	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}}}
+	for _, r := range "jqG?" {
+		a.key(vaxis.Key{Keycode: r, Text: string(r), EventType: vaxis.EventPaste})
+	}
+	if a.quit || a.help || a.cursor != 0 {
+		t.Fatalf("paste ran shortcuts: quit %v help %v cursor %d", a.quit, a.help, a.cursor)
+	}
+}
+
+// Copied text loses trailing spaces per line and the shared indent only.
+func TestTrimCopy(t *testing.T) {
+	for in, want := range map[string]string{
+		"  hello  ":                      "hello",
+		"    if x {  \n      y()\n    }": "if x {\n  y()\n}",
+		"  a  \n\n  b\t ":                "a\n\nb\t",
+		"\tx  ":                          "\tx",
+	} {
+		if got := trimCopy(in); got != want {
+			t.Errorf("trimCopy(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
