@@ -149,13 +149,13 @@ func TestAttention(t *testing.T) {
 	}
 }
 
-// F2 puts the project's shell over the session pane, and F2 again goes back.
+// F2 puts the app's shell over the session pane, and F2 again goes back.
 func TestShellToggle(t *testing.T) {
 	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}},
-		terms: map[string]*term.Model{"s1": term.New(), shellID + "/a": term.New()}, active: "s1", inTerm: true}
+		terms: map[string]*term.Model{"s1": term.New(), shellID: term.New()}, active: "s1", inTerm: true}
 	f2 := vaxis.Key{Keycode: vaxis.KeyF02}
 	a.key(f2)
-	if a.active != shellID+"/a" || !a.inTerm {
+	if a.active != shellID || !a.inTerm {
 		t.Fatalf("F2: active %q inTerm %v", a.active, a.inTerm)
 	}
 	a.key(f2)
@@ -166,11 +166,11 @@ func TestShellToggle(t *testing.T) {
 	a.closeTerm("s1")
 	a.key(f2)
 	a.key(f2)
-	if a.active != "" || a.inTerm || a.terms[shellID+"/a"] == nil {
+	if a.active != "" || a.inTerm || a.terms[shellID] == nil {
 		t.Fatalf("hide: active %q inTerm %v", a.active, a.inTerm)
 	}
 	a.key(f2)
-	if a.active != shellID+"/a" {
+	if a.active != shellID {
 		t.Fatalf("show again: active %q", a.active)
 	}
 }

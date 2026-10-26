@@ -84,7 +84,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 |---|---|
 | `Ctrl+Esc` | switch sidebar ↔ pane (also F12) |
 | `F3` | git diff of the session's project, sidebar too; s: side by side ↔ unified |
-| `F2` | shell in the project's directory over the pane, sidebar too; again goes back |
+| `F2` | one shell for the app, started in the project's directory, over the pane, sidebar too; again goes back |
 | `Ctrl+F` | focus next waiting session (◆), oldest first, sidebar too |
 | `⇧PgUp/Dn` | scroll back / forward (PgUp/PgDn too) |
 | `wheel` | scroll; or drag the scrollbar |

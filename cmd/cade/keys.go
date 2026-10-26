@@ -87,7 +87,7 @@ var paneKeys = []binding{
 		help: "git diff of the session's project, sidebar too; s: side by side ↔ unified; ^D/^U: half page",
 		run:  (*app).openDiff},
 	{label: shellKey, keys: []string{shellKey}, hint: "shell",
-		help: "shell in the project's directory over the pane, sidebar too; again goes back",
+		help: "one shell for the app, started in the project's directory, over the pane, sidebar too; again goes back",
 		run:  (*app).toggleShell},
 	{label: waitLbl, keys: []string{waitKey}, hint: "waiting", show: func(a *app) bool { return len(a.attn) > 0 },
 		help: "focus next waiting session (◆), oldest first, sidebar too", run: (*app).focusWaiting},

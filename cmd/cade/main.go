@@ -29,7 +29,7 @@ const (
 	shellKey  = "F2"
 	waitKey   = "Ctrl+f"
 	waitLbl   = "Ctrl+F"
-	shellID   = "shell:" // + project dir: the project's shell in terms
+	shellID   = "shell" // the one app-wide shell in terms
 	newRowLbl = "[n] new session"
 	selLinger = 600 * time.Millisecond // selection stays highlighted this long after a copy
 	ddWindow  = 400 * time.Millisecond // a second d within this means dd
@@ -94,19 +94,20 @@ type confirmation struct {
 
 type app struct {
 	tree
-	vx      *vaxis.Vaxis
-	home    string
-	cwd     string
-	cfgPath string
-	cfg     config
-	th      theme
-	st      state           // remembered UI state
-	pending map[string]bool // started from cade, jsonl may not exist yet
-	terms   map[string]*term.Model
-	active  string   // key into terms
-	back    string   // pane shown before the shell, which F2 returns to
-	inTerm  bool     // keyboard focus on the Claude pane
-	attn    []string // sessions that rang for attention, oldest first
+	vx       *vaxis.Vaxis
+	home     string
+	cwd      string
+	cfgPath  string
+	cfg      config
+	th       theme
+	st       state           // remembered UI state
+	pending  map[string]bool // started from cade, jsonl may not exist yet
+	terms    map[string]*term.Model
+	active   string   // key into terms
+	back     string   // pane shown before the shell, which F2 returns to
+	shellDir string   // project dir the shell was started in
+	inTerm   bool     // keyboard focus on the Claude pane
+	attn     []string // sessions that rang for attention, oldest first
 
 	// transient UI state
 	input   *prompt       // non-nil while adding a project
@@ -363,13 +364,13 @@ func (a *app) show(key string) {
 	a.setFocus(true)
 }
 
-// toggleShell shows a $SHELL in the cursor's project dir over the pane, starting
-// it if needed; on that shell it hides it, still running, back to the pane shown
-// before, or the empty pane if there was none.
+// toggleShell shows the app's one $SHELL over the pane, starting it in the cursor's
+// project dir if needed; on that shell it hides it, still running, back to the pane
+// shown before, or the empty pane if there was none.
 func (a *app) toggleShell() {
 	a.diff = nil
 	p := a.projects[a.current().p]
-	key := shellID + p.Dir
+	key := shellID
 	if a.active == key {
 		if a.terms[a.back] != nil {
 			a.show(a.back)
@@ -391,6 +392,7 @@ func (a *app) toggleShell() {
 			return
 		}
 		a.terms[key] = t
+		a.shellDir = p.Dir
 	}
 	a.back = a.active
 	a.show(key)
@@ -426,7 +428,6 @@ func (a *app) removeProject(p *project) {
 	for _, s := range p.sessions {
 		a.closeTerm(s.ID)
 	}
-	a.closeTerm(shellID + p.Dir)
 	a.projects = slices.DeleteFunc(a.projects, func(q *project) bool { return q == p })
 	a.save()
 	a.restore(rowKey{})

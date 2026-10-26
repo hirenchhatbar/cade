@@ -586,8 +586,8 @@ func (a *app) drawSearch(win vaxis.Window) {
 
 // titleOf names session id for the pane's title bar and notifications.
 func (a *app) titleOf(id string) string {
-	if dir, ok := strings.CutPrefix(id, shellID); ok {
-		return "SHELL › " + a.short(dir)
+	if id == shellID {
+		return "SHELL › " + a.short(a.shellDir)
 	}
 	for _, p := range a.projects {
 		for _, s := range p.sessions {
