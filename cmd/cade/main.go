@@ -27,8 +27,12 @@ const (
 	focusAlt  = "F12"
 	diffKey   = "F3"
 	shellKey  = "F2"
+	zoomKey   = "F4"
+	zoomAlt   = "Ctrl+z" // Claude's own Ctrl+Z (suspend) only freezes the pane; the shell keeps it for job control
 	waitKey   = "Ctrl+f"
 	waitLbl   = "Ctrl+F"
+	quitKey   = "Ctrl+Shift+q" // needs the kitty keyboard protocol, like Ctrl+Esc; sidebar q always works
+	quitLbl   = "Ctrl+⇧Q"
 	shellID   = "shell" // the one app-wide shell in terms
 	newRowLbl = "[n] new session"
 	selLinger = 600 * time.Millisecond // selection stays highlighted this long after a copy
@@ -86,10 +90,13 @@ type settings struct {
 	issues []string
 }
 
-// confirmation is a pending yes/no question; yes runs on y.
+// confirmation is a pending yes/no question, shown as a dialog; yes runs on y.
 type confirmation struct {
-	lines []string
-	yes   func()
+	title  string
+	rows   [][2]string // label, value: what the action touches
+	note   string      // consequence, under the rows
+	danger bool        // note in the error colour: the action can't be undone
+	yes    func()
 }
 
 type app struct {
@@ -107,22 +114,24 @@ type app struct {
 	back     string   // pane shown before the shell, which F2 returns to
 	shellDir string   // project dir the shell was started in
 	inTerm   bool     // keyboard focus on the Claude pane
+	zoom     bool     // sidebar hidden while the pane or diff has focus; not remembered
 	attn     []string // sessions that rang for attention, oldest first
 
 	// transient UI state
-	input   *prompt       // non-nil while adding a project
-	rename  *renaming     // non-nil while renaming a session
-	search  *searching    // non-nil while searching sessions
-	confirm *confirmation // non-nil while asking yes/no
-	set     *settings     // non-nil while the settings dialog is open
-	diff    *diffView     // non-nil while the git diff covers the pane
-	help    bool          // shortcut dialog open
-	msg     string        // last error, shown above the hints
-	dWait   bool          // a first d was pressed, see ddWindow
-	dSeq    int
-	selSeq  int  // bumped on every pane click, see clearSel
-	pasting bool // inside a bracketed paste; drawing waits for its end
-	quit    bool
+	input    *prompt       // non-nil while adding a project
+	rename   *renaming     // non-nil while renaming a session
+	search   *searching    // non-nil while searching sessions
+	confirm  *confirmation // non-nil while asking yes/no
+	set      *settings     // non-nil while the settings dialog is open
+	diff     *diffView     // non-nil while the git diff covers the pane
+	help     bool          // shortcut dialog open
+	toasts   []toast       // oldest first, see notify
+	toastSeq int
+	dWait    bool // a first d was pressed, see ddWindow
+	dSeq     int
+	selSeq   int  // bumped on every pane click, see clearSel
+	pasting  bool // inside a bracketed paste; drawing waits for its end
+	quit     bool
 }
 
 func main() {
@@ -160,7 +169,7 @@ func main() {
 	a.th, themeErr = loadTheme(cfg)
 	a.fail("", themeErr)
 	if _, err := os.Stat(filepath.Join(filepath.Dir(configPath()), "config.json")); err == nil {
-		a.msg = "config.json is no longer read: rename it to config.yaml"
+		a.notify(toastWarn, "config.json is no longer read: rename it to config.yaml")
 	}
 	a.refresh()
 	if i := slices.IndexFunc(a.rows(), func(r row) bool { return r.s == rowHeader && a.projects[r.p].Dir == cwd }); i >= 0 {
@@ -274,6 +283,8 @@ func (a *app) handle(ev vaxis.Event) bool {
 		}
 	case diffEvent:
 		a.showDiff(ev)
+	case toastExpire:
+		a.expireToast(ev.id)
 	case clearSel:
 		if ev.seq == a.selSeq {
 			ev.t.ClearSelection()
@@ -312,10 +323,10 @@ func (a *app) handle(ev vaxis.Event) bool {
 	return false
 }
 
-// fail shows err (with an optional prefix) above the hints; nil clears nothing.
+// fail shows err (with an optional prefix) as an error toast; nil shows nothing.
 func (a *app) fail(prefix string, err error) {
 	if err != nil {
-		a.msg = prefix + err.Error()
+		a.notify(toastErr, prefix+err.Error())
 	}
 }
 
@@ -422,6 +433,7 @@ func (a *app) deleteSession(p *project, id string) {
 	p.forget(id)
 	a.save()
 	a.restore(rowKey{})
+	a.notify(toastOK, "Session deleted")
 }
 
 func (a *app) removeProject(p *project) {
@@ -431,6 +443,7 @@ func (a *app) removeProject(p *project) {
 	a.projects = slices.DeleteFunc(a.projects, func(q *project) bool { return q == p })
 	a.save()
 	a.restore(rowKey{})
+	a.notify(toastOK, "Project "+p.Name+" removed")
 }
 
 func (a *app) account(p *project) account { return a.cfg.account(p.Dir, a.home) }
@@ -465,7 +478,27 @@ func (a *app) setFocus(inTerm bool) {
 
 func (a *app) paneSize() (int, int) {
 	w, h := a.vx.Window().Size()
-	return max(w-sideW-1-barW, 1), max(h-1, 1) // separator, scrollbar, title bar
+	return max(w-a.paneX()-barW, 1), max(h-1, 1) // scrollbar, title bar
+}
+
+// paneX is the pane's first column: past the sidebar and its separator, or 0 when
+// zoomed. Focusing the sidebar shows it again until the pane has focus back.
+func (a *app) paneX() int {
+	if a.zoom && (a.inTerm || a.diff != nil) {
+		return 0
+	}
+	return sideW + 1
+}
+
+// toggleZoom hides or shows the sidebar; zooming with the sidebar focused moves to the pane.
+func (a *app) toggleZoom() {
+	if a.diff == nil && !hasPane(a) {
+		return
+	}
+	a.zoom = !a.zoom
+	if a.zoom && a.diff == nil {
+		a.setFocus(true)
+	}
 }
 
 // markAttn queues session id as waiting; it reports whether it was new.
@@ -495,7 +528,7 @@ func (a *app) focusWaiting() {
 		}
 		a.clearAttn(id) // session gone from disk and list
 	}
-	a.msg = "no session waiting"
+	a.notify(toastNotice, "No session waiting")
 }
 
 // editConfig runs $EDITOR on config.yaml with cade suspended, then checks the
@@ -529,7 +562,7 @@ func (a *app) editConfig() {
 	a.cfg = cfg
 	a.th, _ = loadTheme(cfg) // no issues, so no theme error
 	a.refresh()              // an account may now keep its sessions elsewhere
-	a.msg = "config.yaml reloaded"
+	a.notify(toastOK, "config.yaml reloaded")
 }
 
 // themeNames lists the built-in and user themes, sorted.

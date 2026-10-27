@@ -29,6 +29,9 @@ type config struct {
 	Diff struct {
 		Wrap *bool `yaml:"wrap"` // long lines wrap in the F3 diff; false cuts them with …. Default: true
 	} `yaml:"diff"`
+	Toasts struct {
+		Position string `yaml:"position"` // corner, see toastPositions. Default: top-right
+	} `yaml:"toasts"`
 }
 
 // account is one Claude login: how claude is started and where it keeps sessions.
@@ -72,6 +75,9 @@ func parseConfig(path string) (cfg config, issues []string, err error) {
 	}
 	if _, ok := c.Accounts[c.Default]; len(c.Accounts) > 0 && !ok {
 		issues = append(issues, fmt.Sprintf("claude.default: no account %q", c.Default))
+	}
+	if p := cfg.Toasts.Position; p != "" && !slices.Contains(toastPositions, p) {
+		issues = append(issues, fmt.Sprintf("toasts.position: %q is not one of %s", p, strings.Join(toastPositions, ", ")))
 	}
 	return cfg, issues, nil
 }

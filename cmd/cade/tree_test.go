@@ -109,7 +109,7 @@ func TestDelete(t *testing.T) {
 		t.Fatal("removing a project must keep its sessions")
 	}
 	a.confirmProject()
-	if a.confirm != nil || a.msg == "" {
+	if a.confirm != nil || len(a.toasts) == 0 {
 		t.Fatal("last project must not be removable")
 	}
 }

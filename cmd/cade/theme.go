@@ -33,6 +33,51 @@ var themes = map[string]palette{
 		Thumb: "#bd93f9", Error: "#ff5555", TitleBg: "#bd93f9", TitleFg: "#282a36",
 	},
 	"terminal": {}, // terminal's own colors, attributes only
+	"tokyonight-night": {
+		Bg: "#1a1b26", Fg: "#c0caf5", Muted: "#565f89", Project: "#7aa2f7",
+		SelBg: "#283457", SelFg: "#c0caf5", Key: "#bb9af7", Running: "#9ece6a", Attention: "#e0af68",
+		Thumb: "#7aa2f7", Error: "#f7768e", TitleBg: "#7aa2f7", TitleFg: "#1a1b26",
+	},
+	"tokyonight-day": {
+		Bg: "#e1e2e7", Fg: "#3760bf", Muted: "#848cb5", Project: "#2e7de9",
+		SelBg: "#b7c1e3", SelFg: "#3760bf", Key: "#9854f1", Running: "#587539", Attention: "#8c6c3e",
+		Thumb: "#2e7de9", Error: "#f52a65", TitleBg: "#2e7de9", TitleFg: "#e1e2e7",
+	},
+	"catppuccin-mocha": {
+		Bg: "#1e1e2e", Fg: "#cdd6f4", Muted: "#6c7086", Project: "#cba6f7",
+		SelBg: "#313244", SelFg: "#cdd6f4", Key: "#f5c2e7", Running: "#a6e3a1", Attention: "#fab387",
+		Thumb: "#cba6f7", Error: "#f38ba8", TitleBg: "#cba6f7", TitleFg: "#1e1e2e",
+	},
+	"catppuccin-latte": {
+		Bg: "#eff1f5", Fg: "#4c4f69", Muted: "#9ca0b0", Project: "#8839ef",
+		SelBg: "#ccd0da", SelFg: "#4c4f69", Key: "#ea76cb", Running: "#40a02b", Attention: "#fe640b",
+		Thumb: "#8839ef", Error: "#d20f39", TitleBg: "#8839ef", TitleFg: "#eff1f5",
+	},
+	"gruvbox-dark": {
+		Bg: "#282828", Fg: "#ebdbb2", Muted: "#928374", Project: "#83a598",
+		SelBg: "#3c3836", SelFg: "#ebdbb2", Key: "#d3869b", Running: "#b8bb26", Attention: "#fe8019",
+		Thumb: "#83a598", Error: "#fb4934", TitleBg: "#83a598", TitleFg: "#282828",
+	},
+	"gruvbox-light": {
+		Bg: "#fbf1c7", Fg: "#3c3836", Muted: "#928374", Project: "#076678",
+		SelBg: "#ebdbb2", SelFg: "#3c3836", Key: "#8f3f71", Running: "#79740e", Attention: "#af3a03",
+		Thumb: "#076678", Error: "#9d0006", TitleBg: "#076678", TitleFg: "#fbf1c7",
+	},
+	"nord": { // no official light variant
+		Bg: "#2e3440", Fg: "#d8dee9", Muted: "#4c566a", Project: "#88c0d0",
+		SelBg: "#3b4252", SelFg: "#d8dee9", Key: "#b48ead", Running: "#a3be8c", Attention: "#ebcb8b",
+		Thumb: "#88c0d0", Error: "#bf616a", TitleBg: "#88c0d0", TitleFg: "#2e3440",
+	},
+	"solarized-dark": {
+		Bg: "#002b36", Fg: "#839496", Muted: "#586e75", Project: "#268bd2",
+		SelBg: "#073642", SelFg: "#93a1a1", Key: "#d33682", Running: "#859900", Attention: "#cb4b16",
+		Thumb: "#268bd2", Error: "#dc322f", TitleBg: "#268bd2", TitleFg: "#002b36",
+	},
+	"solarized-light": {
+		Bg: "#fdf6e3", Fg: "#657b83", Muted: "#93a1a1", Project: "#268bd2",
+		SelBg: "#eee8d5", SelFg: "#586e75", Key: "#d33682", Running: "#859900", Attention: "#cb4b16",
+		Thumb: "#268bd2", Error: "#dc322f", TitleBg: "#268bd2", TitleFg: "#fdf6e3",
+	},
 }
 
 const defaultTheme = "dracula"

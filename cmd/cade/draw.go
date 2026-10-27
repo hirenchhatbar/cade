@@ -158,23 +158,25 @@ func (a *app) draw() {
 	a.vx.HideCursor()
 	w, h := win.Size()
 
-	a.drawSidebar(win.New(0, 0, sideW, h))
-	for r := range h {
-		win.SetCell(sideW, r, cell("│", a.th.muted))
+	if a.paneX() > 0 {
+		a.drawSidebar(win.New(0, 0, sideW, h))
+		for r := range h {
+			win.SetCell(sideW, r, cell("│", a.th.muted))
+		}
 	}
 	a.drawPane(win, w, h)
 	a.drawHelp(win)
 	a.drawAdd(win)
 	a.drawRename(win)
 	a.drawSettings(win)
+	a.drawConfirm(win)
+	a.drawToasts(win)
 	a.vx.Render()
 }
 
 // sidebarHints returns the lines under the tree for the current mode.
 func (a *app) sidebarHints() []string {
 	switch {
-	case a.confirm != nil:
-		return append(slices.Clone(a.confirm.lines), confirmHint)
 	case a.search != nil:
 		return grid([][2]string{{"↑/↓", "pick"}, {"⏎", "open"}, {"Esc", "cancel"}}, sideW-1)
 	case a.inTerm:
@@ -194,9 +196,6 @@ func (a *app) drawSidebar(side vaxis.Window) {
 
 	hints := a.sidebarHints()
 	reserved := len(hints) + 1 // + divider
-	if a.msg != "" {
-		reserved++
-	}
 	a.visible = max(treeH-reserved, 1)
 	a.keepCursorVisible()
 	rows := a.rows()
@@ -219,10 +218,6 @@ func (a *app) drawSidebar(side vaxis.Window) {
 
 	y := treeH - reserved
 	tree.PrintTruncate(y, vaxis.Segment{Text: " " + strings.Repeat("─", sideW-2), Style: th.muted})
-	if a.msg != "" {
-		y++
-		tree.PrintTruncate(y, vaxis.Segment{Text: " " + a.msg, Style: th.err})
-	}
 	for i, hint := range hints {
 		tree.PrintTruncate(y+1+i, append([]vaxis.Segment{{Text: " ", Style: th.muted}}, a.hintSegs(hint)...)...)
 	}
@@ -292,7 +287,8 @@ func (a *app) drawRow(win vaxis.Window, y int, r row, selected bool, cw int) {
 }
 
 func (a *app) drawPane(win vaxis.Window, w, h int) {
-	title := win.New(sideW+1, 0, w-sideW-1, titleH)
+	x := a.paneX()
+	title := win.New(x, 0, w-x, titleH)
 	t := a.terms[a.active]
 	waiting := ""
 	if len(a.attn) > 0 {
@@ -304,18 +300,18 @@ func (a *app) drawPane(win vaxis.Window, w, h int) {
 			mode = "side by side"
 		}
 		a.titleBar(title, " DIFF › "+a.diff.name, waiting+"[s] "+mode+"  [Esc] close ", true)
-		a.drawDiff(win.New(sideW+1, titleH, w-sideW-1, h-titleH))
+		a.drawDiff(win.New(x, titleH, w-x, h-titleH))
 		return
 	}
 	if t == nil {
 		a.titleBar(title, " CLAUDE", waiting, false)
-		a.drawIdle(win.New(sideW+1, titleH, w-sideW-1, h-titleH))
+		a.drawIdle(win.New(x, titleH, w-x, h-titleH))
 		return
 	}
 	a.titleBar(title, " "+a.titleOf(a.active), waiting, a.inTerm)
 	pw, ph := a.paneSize()
 	t.Resize(pw, ph)
-	t.Draw(win.New(sideW+1, titleH, pw, ph))
+	t.Draw(win.New(x, titleH, pw, ph))
 	if off, m := t.ScrollInfo(); m > 0 {
 		a.scrollbar(win, w-barW, barW, titleH, ph, off, m)
 	}
@@ -518,6 +514,36 @@ func (a *app) drawRename(win vaxis.Window) {
 		vaxis.Segment{Text: "▏", Style: on(th.key)})
 	box.PrintTruncate(bh-1, append([]vaxis.Segment{{Text: " ", Style: th.muted}},
 		a.hintSegs("[⏎] save (empty = Claude's title)  [Esc] cancel")...)...)
+}
+
+// drawConfirm overlays the pending yes/no question with what it touches.
+func (a *app) drawConfirm(win vaxis.Window) {
+	c := a.confirm
+	if c == nil {
+		return
+	}
+	th := a.th
+	labelW, bw := 0, runeLen(c.title)+2
+	for _, r := range c.rows {
+		labelW = max(labelW, runeLen(r[0])+1)
+	}
+	for _, r := range c.rows {
+		bw = max(bw, 1+labelW+1+runeLen(r[1])+1)
+	}
+	bw = max(bw, runeLen(c.note)+2, 84) // as large as the add-project dialog, so the logo behind doesn't show around it
+	box, on := a.dialog(win, " "+c.title, bw, max(titleH+len(c.rows)+4, addListH+8))
+	bw, bh := box.Size()
+	for i, r := range c.rows {
+		box.PrintTruncate(titleH+1+i,
+			vaxis.Segment{Text: " " + pad(r[0]+":", labelW+1), Style: on(th.muted)},
+			vaxis.Segment{Text: truncateLeft(r[1], bw-labelW-3), Style: on(th.base)})
+	}
+	note := on(th.muted)
+	if c.danger {
+		note = on(th.err)
+	}
+	box.PrintTruncate(bh-2, vaxis.Segment{Text: " " + c.note, Style: note})
+	box.PrintTruncate(bh-1, append([]vaxis.Segment{{Text: " ", Style: th.muted}}, a.hintSegs(confirmHint)...)...)
 }
 
 // drawMatch draws one directory row, the fuzzy-matched letters bold and underlined.

@@ -73,7 +73,7 @@ var sidebarKeys = []binding{
 		run: func(a *app) { a.set = &settings{} }},
 	{label: "?", keys: []string{"?"}, hint: "help", always: true, help: "this help", idle: "all shortcuts",
 		run: func(a *app) { a.help = true }},
-	{label: "q", keys: []string{"q", "Ctrl+c"}, hint: "quit", help: "quit", run: func(a *app) { a.quit = true }},
+	{label: "q", keys: []string{"q", "Ctrl+c"}, hint: "quit", help: "quit (asks while sessions run)", run: (*app).askQuit},
 	{label: "H", keys: []string{"H"}, hint: "toggle hints", always: true, help: "show / hide these hints",
 		run: (*app).toggleHints},
 }
@@ -91,6 +91,10 @@ var paneKeys = []binding{
 		run:  (*app).toggleShell},
 	{label: waitLbl, keys: []string{waitKey}, hint: "waiting", show: func(a *app) bool { return len(a.attn) > 0 },
 		help: "focus next waiting session (◆), oldest first, sidebar too", run: (*app).focusWaiting},
+	{label: "F4/^Z", keys: []string{zoomKey}, hint: "zoom",
+		help: "hide / show the sidebar (Ctrl+Z too, except in the shell), sidebar too", run: (*app).toggleZoom},
+	{keys: []string{zoomAlt}, when: func(a *app) bool { return a.active != shellID }, run: (*app).toggleZoom},
+	{label: quitLbl, keys: []string{quitKey}, help: "quit cade, sidebar too (asks while sessions run)", run: (*app).askQuit},
 	{label: "⇧PgUp/Dn", keys: []string{"Page_Up", "Shift+Page_Up"}, hint: "scroll", help: "scroll back / forward (PgUp/PgDn too)",
 		when: hasScrollback, run: func(a *app) { a.pageScroll(1) }},
 	{keys: []string{"Page_Down", "Shift+Page_Down"}, when: hasScrollback, run: func(a *app) { a.pageScroll(-1) }},
@@ -130,24 +134,31 @@ func (a *app) match(bs []binding, k vaxis.Key) *binding {
 // key routes a key press; it reports whether cade should quit.
 func (a *app) key(k vaxis.Key) bool {
 	release := k.EventType == vaxis.EventRelease
+	// pasted text is never a shortcut
+	paste := k.EventType == vaxis.EventPaste
+	// the dialog is drawn over everything, so it takes keys before the diff and the pane
+	if a.confirm != nil {
+		if !release && !paste {
+			a.confirmKey(k)
+		}
+		return a.quit
+	}
 	if a.diff != nil {
 		if !release {
 			a.diffKey(k)
 		}
-		return false
+		return a.quit
 	}
-	// pasted text is never a shortcut
-	paste := k.EventType == vaxis.EventPaste
 	if paste && a.inTerm && hasPane(a) {
 		a.terms[a.active].Update(k)
 		return false
 	}
 	// prompts and help keep Esc for cancel
-	if b := a.match(paneKeys[:4], k); b != nil && !paste && (a.inTerm || !a.help && a.confirm == nil && a.input == nil && a.rename == nil && a.search == nil && a.set == nil) {
+	if b := a.match(paneKeys[:7], k); b != nil && !paste && (a.inTerm || !a.help && a.input == nil && a.rename == nil && a.search == nil && a.set == nil) {
 		if !release {
 			b.run(a)
 		}
-		return false
+		return a.quit
 	}
 	if a.inTerm && hasPane(a) {
 		if b := a.match(paneKeys, k); b != nil {
@@ -163,8 +174,6 @@ func (a *app) key(k vaxis.Key) bool {
 	case release:
 	case a.help:
 		a.help = false // any key closes it
-	case a.confirm != nil:
-		a.confirmKey(k)
 	case a.input != nil:
 		a.promptKey(k)
 	case a.rename != nil:
@@ -174,7 +183,6 @@ func (a *app) key(k vaxis.Key) bool {
 	case a.set != nil:
 		a.settingsKey(k)
 	default:
-		a.msg = "" // errors last until the next key
 		if !k.MatchString("d") {
 			a.dWait = false
 		}
@@ -236,7 +244,7 @@ func (a *app) mouse(ev vaxis.Mouse) {
 	w, h := a.vx.Window().Size()
 	drag := ev.Button == vaxis.MouseLeftButton && ev.EventType != vaxis.EventRelease
 	switch {
-	case a.diff != nil && ev.Col > sideW: // the diff covers the pane
+	case a.diff != nil && ev.Col >= a.paneX(): // the diff covers the pane
 		if ev.Button == vaxis.MouseWheelUp {
 			a.diff.pg.Offset = max(a.diff.pg.Offset-3, 0)
 		} else if ev.Button == vaxis.MouseWheelDown {
@@ -249,7 +257,7 @@ func (a *app) mouse(ev vaxis.Mouse) {
 		} else {
 			t.Update(ev) // wheel over the bar still scrolls
 		}
-	case ev.Col <= sideW:
+	case ev.Col < a.paneX():
 		a.sidebarMouse(ev, drag)
 	case t != nil:
 		a.paneMouse(t, ev)
@@ -287,7 +295,7 @@ func (a *app) paneMouse(t *term.Model, ev vaxis.Mouse) {
 			a.setFocus(true)
 		}
 	}
-	ev.Col -= sideW + 1
+	ev.Col -= a.paneX()
 	ev.Row -= titleH
 	t.Update(ev)
 	// cade captures the mouse, so the host terminal's copy-on-select can't run; do it here.
@@ -334,6 +342,29 @@ func (a *app) confirmKey(k vaxis.Key) {
 	}
 }
 
+// askQuit quits, first asking when sessions run, since quitting closes them.
+func (a *app) askQuit() {
+	var rows [][2]string
+	claude := len(a.terms)
+	if a.terms[shellID] != nil {
+		claude--
+		rows = append(rows, [2]string{"Shell", "running"})
+	}
+	if claude > 0 {
+		rows = append([][2]string{{"Claude", fmt.Sprintf("%d running", claude)}}, rows...)
+	}
+	if len(rows) == 0 {
+		a.quit = true
+		return
+	}
+	a.confirm = &confirmation{
+		title: "QUIT CADE",
+		rows:  rows,
+		note:  "Closes them; Claude sessions stay on disk and can be resumed.",
+		yes:   func() { a.quit = true },
+	}
+}
+
 // confirmSession asks to delete the session under the cursor from disk.
 func (a *app) confirmSession() {
 	cur := a.current()
@@ -342,21 +373,44 @@ func (a *app) confirmSession() {
 	}
 	p := a.projects[cur.p]
 	s := p.sessions[cur.s]
+	file := filepath.Join(projectDir(a.root(p), p.Dir), s.ID+".jsonl")
+	rows := [][2]string{{"Session", s.Title}, {"ID", s.ID}, {"Project", p.Name + "  " + a.short(p.Dir)}, {"File", a.short(file)}}
+	if st, err := os.Stat(file); err == nil {
+		rows = append(rows, [2]string{"Modified", st.ModTime().Format("2006-01-02 15:04")})
+	}
+	if a.terms[s.ID] != nil {
+		rows = append(rows, [2]string{"Status", "running, Claude in it will be closed"})
+	}
 	a.confirm = &confirmation{
-		lines: []string{"Delete session from disk? Can't undo.", fmt.Sprintf("%s (%s)", s.Title, s.short())},
-		yes:   func() { a.deleteSession(p, s.ID) },
+		title:  "DELETE SESSION",
+		rows:   rows,
+		note:   "Deletes the transcript from disk. Can't undo.",
+		danger: true,
+		yes:    func() { a.deleteSession(p, s.ID) },
 	}
 }
 
 // confirmProject asks to remove the cursor's project from cade's list.
 func (a *app) confirmProject() {
 	if len(a.projects) == 1 {
-		a.msg = "can't remove the last project"
+		a.notify(toastWarn, "Can't remove the last project")
 		return
 	}
 	p := a.projects[a.current().p]
+	running := 0
+	for _, s := range p.sessions {
+		if a.terms[s.ID] != nil {
+			running++
+		}
+	}
+	sessions := fmt.Sprint(len(p.sessions))
+	if running > 0 {
+		sessions += fmt.Sprintf(" (%d running, will be closed)", running)
+	}
 	a.confirm = &confirmation{
-		lines: []string{"Remove project from cade's list?", p.Name + "  " + a.short(p.Dir), "Folder and Claude sessions are kept."},
+		title: "REMOVE PROJECT",
+		rows:  [][2]string{{"Project", p.Name}, {"Dir", a.short(p.Dir)}, {"Sessions", sessions}},
+		note:  "Only leaves cade's list; folder and Claude sessions are kept.",
 		yes:   func() { a.removeProject(p) },
 	}
 }
@@ -467,7 +521,7 @@ func (a *app) savedSession() (*project, session, bool) {
 	p := a.projects[cur.p]
 	s := p.sessions[cur.s]
 	if _, err := os.Stat(filepath.Join(projectDir(a.root(p), p.Dir), s.ID+".jsonl")); err != nil {
-		a.msg = "session not saved by Claude yet"
+		a.notify(toastNotice, "Session not saved by Claude yet")
 		return nil, session{}, false
 	}
 	return p, s, true

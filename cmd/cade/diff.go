@@ -297,6 +297,10 @@ func (a *app) diffKey(k vaxis.Key) {
 	switch {
 	case k.MatchString("Escape"), k.MatchString(diffKey):
 		a.closeDiff()
+	case k.MatchString(zoomKey), k.MatchString(zoomAlt):
+		a.toggleZoom()
+	case k.MatchString(quitKey):
+		a.askQuit()
 	case k.MatchString("s"):
 		a.st.UnifiedDiff = !a.st.UnifiedDiff
 		a.fail("save failed: ", writeJSON(statePath(), a.st))

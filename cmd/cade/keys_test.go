@@ -144,8 +144,8 @@ func TestAttention(t *testing.T) {
 	}
 	a.attn = []string{"gone"}
 	a.key(vaxis.Key{Keycode: 'f', Modifiers: vaxis.ModCtrl})
-	if len(a.attn) != 0 || a.msg == "" {
-		t.Fatalf("missing sessions should drop out: attn %v msg %q", a.attn, a.msg)
+	if len(a.attn) != 0 || len(a.toasts) == 0 {
+		t.Fatalf("missing sessions should drop out: attn %v toasts %v", a.attn, a.toasts)
 	}
 }
 
@@ -197,5 +197,52 @@ func TestTrimCopy(t *testing.T) {
 		if got := trimCopy(in); got != want {
 			t.Errorf("trimCopy(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// F4 and Ctrl+Z hide the sidebar while the pane has focus; the shell keeps Ctrl+Z.
+func TestZoom(t *testing.T) {
+	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}},
+		terms: map[string]*term.Model{"s1": term.New(), shellID: term.New()}, active: "s1"}
+	a.key(vaxis.Key{Keycode: vaxis.KeyF04})
+	if !a.zoom || !a.inTerm || a.paneX() != 0 {
+		t.Fatalf("F4: zoom %v inTerm %v x %d", a.zoom, a.inTerm, a.paneX())
+	}
+	a.key(vaxis.Key{Keycode: vaxis.KeyF12}) // to the sidebar: it shows again
+	if !a.zoom || a.paneX() != sideW+1 {
+		t.Fatalf("sidebar focus: zoom %v x %d", a.zoom, a.paneX())
+	}
+	a.key(vaxis.Key{Keycode: vaxis.KeyF12})
+	ctrlZ := vaxis.Key{Keycode: 'z', Modifiers: vaxis.ModCtrl}
+	a.key(ctrlZ)
+	if a.zoom || a.paneX() != sideW+1 {
+		t.Fatal("Ctrl+Z should unzoom")
+	}
+	a.active = shellID
+	a.key(ctrlZ)
+	if a.zoom {
+		t.Fatal("Ctrl+Z belongs to the shell")
+	}
+}
+
+// Ctrl+Shift+Q quits from the pane and the diff, asking first while sessions run.
+func TestQuitAsks(t *testing.T) {
+	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}},
+		terms: map[string]*term.Model{"s1": term.New()}, active: "s1", inTerm: true}
+	q := vaxis.Key{Keycode: 'q', ShiftedCode: 'Q', Modifiers: vaxis.ModCtrl | vaxis.ModShift}
+	if a.key(q) || a.confirm == nil {
+		t.Fatalf("running session: quit without asking, confirm %v", a.confirm)
+	}
+	if a.key(vaxis.Key{Keycode: 'n', Text: "n"}) || a.confirm != nil {
+		t.Fatal("n should cancel")
+	}
+	a.diff = &diffView{}
+	a.key(q)
+	if !a.key(vaxis.Key{Keycode: 'y', Text: "y"}) {
+		t.Fatal("y in the diff should quit")
+	}
+	a = &app{inTerm: true}
+	if !a.key(q) {
+		t.Fatal("nothing running: should quit at once")
 	}
 }

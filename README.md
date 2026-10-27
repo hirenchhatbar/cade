@@ -75,7 +75,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `⇥` | go to Claude pane |
 | `,` | settings: theme, hints, edit config.yaml in $EDITOR |
 | `?` | this help |
-| `q` | quit |
+| `q` | quit (asks while sessions run) |
 | `H` | show / hide these hints |
 
 ### Claude pane
@@ -86,6 +86,8 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `F3` | git diff of the session's project, sidebar too; s: side by side ↔ unified |
 | `F2` | one shell for the app, started in the project's directory, over the pane, sidebar too; again goes back |
 | `Ctrl+F` | focus next waiting session (◆), oldest first, sidebar too |
+| `F4/^Z` | hide / show the sidebar (Ctrl+Z too, except in the shell), sidebar too |
+| `Ctrl+⇧Q` | quit cade, sidebar too (asks while sessions run) |
 | `⇧PgUp/Dn` | scroll back / forward (PgUp/PgDn too) |
 | `wheel` | scroll; or drag the scrollbar |
 | `drag` | select text, 2×click word, 3×click line → copied |
@@ -113,11 +115,13 @@ All files live in `~/.config/cade/` (`$XDG_CONFIG_HOME/cade/` if set; on macOS
 |---|---|---|
 | `projects.json` | cade | projects, their order and collapsed state, session titles and stars |
 | `state.json` | cade | remembered UI state (hints hidden, diff side by side or unified) |
-| `config.yaml` | you (cade writes only `theme`) | theme, diff, Claude accounts |
+| `config.yaml` | you (cade writes only `theme`) | theme, diff, toasts, Claude accounts |
 
 ### Themes
 
-Dracula is the default. Built-in themes are `dracula` and `terminal` (your terminal's own colours).
+Dracula is the default. Built-in themes are `dracula`, `terminal` (your terminal's own colours), `tokyonight-night`,
+`tokyonight-day`, `catppuccin-mocha`, `catppuccin-latte`, `gruvbox-dark`, `gruvbox-light`, `nord`, `solarized-dark`
+and `solarized-light`.
 
 ```yaml
 theme: dracula
@@ -133,7 +137,7 @@ themes:
 
 Colour fields, as `#rrggbb`: `bg`, `fg`, `muted`, `project`, `selBg`, `selFg`, `key`, `running`,
 `attention`, `thumb`, `error`, `titleBg`, `titleFg`. A bad config falls back to Dracula and shows the error in
-the sidebar. The config is read at startup.
+a toast. The config is read at startup.
 
 ### Diff
 
@@ -144,6 +148,17 @@ position. Long lines wrap inside their column; to cut them with `…` instead:
 ```yaml
 diff:
   wrap: false
+```
+
+### Toasts
+
+Success, notice, warning and error messages show as toasts that stack in a corner and fade on
+their own (3s for success, up to 8s for errors). Top right by default; also `top-left`,
+`bottom-right` and `bottom-left`:
+
+```yaml
+toasts:
+  position: bottom-right
 ```
 
 ### Settings dialog

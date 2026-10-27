@@ -8,6 +8,14 @@ import (
 	"go.rockorager.dev/vaxis"
 )
 
+func TestBuiltinThemesBuild(t *testing.T) {
+	for name, p := range themes {
+		if _, err := p.build(); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
 func TestLoadTheme(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
