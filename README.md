@@ -73,7 +73,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `d/dd` | d: delete session from disk · dd: remove project from list (both ask) |
 | `g/G` | top / end |
 | `⇥` | go to Claude pane |
-| `,` | settings: theme, hints, edit config.yaml in $EDITOR |
+| `,` | settings: theme, hints, sidebar side, edit config.yaml in $EDITOR |
 | `?` | this help |
 | `q` | quit (asks while sessions run) |
 | `H` | show / hide these hints |
@@ -114,7 +114,7 @@ All files live in `~/.config/cade/` (`$XDG_CONFIG_HOME/cade/` if set; on macOS
 | File | Written by | Contents |
 |---|---|---|
 | `projects.json` | cade | projects, their order and collapsed state, session titles and stars |
-| `state.json` | cade | remembered UI state (hints hidden, diff side by side or unified) |
+| `state.json` | cade | remembered UI state (hints hidden, sidebar left or right, diff side by side or unified) |
 | `config.yaml` | you (cade writes only `theme`) | theme, diff, toasts, Claude accounts |
 
 ### Themes
@@ -165,6 +165,7 @@ toasts:
 
 `,` opens settings. Picking a theme applies at once and writes the `theme` key to `config.yaml`;
 the rest of the file, comments included, is kept (indentation is normalised to two spaces).
+"Sidebar" puts the sessions sidebar on the left (default) or right; it is saved in `state.json`.
 "Edit config.yaml" suspends cade and opens the file in `$VISUAL`, else `$EDITOR`, else `vi`. On
 save cade checks the file: a clean one takes effect at once (account changes apply to sessions
 started after it), otherwise the dialog lists the issues and the config from before the edit stays

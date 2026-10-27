@@ -303,7 +303,7 @@ func (a *app) diffKey(k vaxis.Key) {
 		a.askQuit()
 	case k.MatchString("s"):
 		a.st.UnifiedDiff = !a.st.UnifiedDiff
-		a.fail("save failed: ", writeJSON(statePath(), a.st))
+		a.saveState()
 		a.diff.laid, pg.Offset = 0, 0 // rows of one layout don't match the other's
 	case k.MatchString("j"), k.MatchString("Down"):
 		pg.Offset++

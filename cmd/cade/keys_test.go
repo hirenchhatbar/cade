@@ -200,22 +200,34 @@ func TestTrimCopy(t *testing.T) {
 	}
 }
 
+// The sidebar on the right puts the pane at column 0, ending before the separator.
+func TestSidebarRight(t *testing.T) {
+	a := &app{st: state{SidebarRight: true}}
+	if x, end := a.paneSpan(100); x != 0 || end != 100-sideW-1 || a.sideX(100) != 100-sideW {
+		t.Fatalf("pane %d..%d, sidebar at %d", x, end, a.sideX(100))
+	}
+	a.zoom, a.inTerm = true, true
+	if x, end := a.paneSpan(100); x != 0 || end != 100 {
+		t.Fatalf("zoomed pane %d..%d", x, end)
+	}
+}
+
 // F4 and Ctrl+Z hide the sidebar while the pane has focus; the shell keeps Ctrl+Z.
 func TestZoom(t *testing.T) {
 	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}},
 		terms: map[string]*term.Model{"s1": term.New(), shellID: term.New()}, active: "s1"}
 	a.key(vaxis.Key{Keycode: vaxis.KeyF04})
-	if !a.zoom || !a.inTerm || a.paneX() != 0 {
-		t.Fatalf("F4: zoom %v inTerm %v x %d", a.zoom, a.inTerm, a.paneX())
+	if x, _ := a.paneSpan(100); !a.zoom || !a.inTerm || x != 0 {
+		t.Fatalf("F4: zoom %v inTerm %v x %d", a.zoom, a.inTerm, x)
 	}
 	a.key(vaxis.Key{Keycode: vaxis.KeyF12}) // to the sidebar: it shows again
-	if !a.zoom || a.paneX() != sideW+1 {
-		t.Fatalf("sidebar focus: zoom %v x %d", a.zoom, a.paneX())
+	if x, _ := a.paneSpan(100); !a.zoom || x != sideW+1 {
+		t.Fatalf("sidebar focus: zoom %v x %d", a.zoom, x)
 	}
 	a.key(vaxis.Key{Keycode: vaxis.KeyF12})
 	ctrlZ := vaxis.Key{Keycode: 'z', Modifiers: vaxis.ModCtrl}
 	a.key(ctrlZ)
-	if a.zoom || a.paneX() != sideW+1 {
+	if x, _ := a.paneSpan(100); a.zoom || x != sideW+1 {
 		t.Fatal("Ctrl+Z should unzoom")
 	}
 	a.active = shellID

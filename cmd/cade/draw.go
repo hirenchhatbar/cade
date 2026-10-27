@@ -163,10 +163,15 @@ func (a *app) draw() {
 	a.vx.HideCursor()
 	w, h := win.Size()
 
-	if a.paneX() > 0 {
-		a.drawSidebar(win.New(0, 0, sideW, h))
+	if a.sideShown() {
+		x := a.sideX(w)
+		a.drawSidebar(win.New(x, 0, sideW, h))
+		sep := sideW
+		if a.st.SidebarRight {
+			sep = x - 1
+		}
 		for r := range h {
-			win.SetCell(sideW, r, cell("│", a.th.muted))
+			win.SetCell(sep, r, cell("│", a.th.muted))
 		}
 	}
 	a.drawPane(win, w, h)
@@ -292,8 +297,8 @@ func (a *app) drawRow(win vaxis.Window, y int, r row, selected bool, cw int) {
 }
 
 func (a *app) drawPane(win vaxis.Window, w, h int) {
-	x := a.paneX()
-	title := win.New(x, 0, w-x, titleH)
+	x, end := a.paneSpan(w)
+	title := win.New(x, 0, end-x, titleH)
 	t := a.terms[a.active]
 	waiting := ""
 	if len(a.attn) > 0 {
@@ -305,12 +310,12 @@ func (a *app) drawPane(win vaxis.Window, w, h int) {
 			mode = "side by side"
 		}
 		a.titleBar(title, " DIFF › "+a.diff.name, waiting+"[s] "+mode+"  [Esc] close ", true)
-		a.drawDiff(win.New(x, titleH, w-x, h-titleH))
+		a.drawDiff(win.New(x, titleH, end-x, h-titleH))
 		return
 	}
 	if t == nil {
 		a.titleBar(title, " CLAUDE", waiting, false)
-		a.drawIdle(win.New(x, titleH, w-x, h-titleH))
+		a.drawIdle(win.New(x, titleH, end-x, h-titleH))
 		return
 	}
 	a.titleBar(title, " "+a.titleOf(a.active), waiting, a.inTerm)
@@ -318,7 +323,7 @@ func (a *app) drawPane(win vaxis.Window, w, h int) {
 	t.Resize(pw, ph)
 	t.Draw(win.New(x, titleH, pw, ph))
 	if off, m := t.ScrollInfo(); m > 0 {
-		a.scrollbar(win, w-barW, barW, titleH, ph, off, m, a.inTerm || a.hover == paneBar)
+		a.scrollbar(win, end-barW, barW, titleH, ph, off, m, a.inTerm || a.hover == paneBar)
 	}
 	if !a.inTerm {
 		a.vx.HideCursor()
@@ -660,10 +665,15 @@ func (a *app) drawSettings(win vaxis.Window) {
 	if a.st.HideHints {
 		hints = "☑"
 	}
+	side := "‹ left ›"
+	if a.st.SidebarRight {
+		side = "‹ right ›"
+	}
 	editor := cmp.Or(os.Getenv("VISUAL"), os.Getenv("EDITOR"), "vi")
 	rows := [settingRows][2]string{
 		setTheme: {"Theme", "‹ " + cmp.Or(a.cfg.Theme, defaultTheme) + " ›"},
 		setHints: {"Hide hints", hints},
+		setSide:  {"Sidebar", side},
 		setEdit:  {"Edit config.yaml", "in " + editor + ", checked on save"},
 	}
 	for i, r := range rows {

@@ -67,11 +67,14 @@ func saveProjects(path string, ps []*project) error { return writeJSON(path, ps)
 // state is UI state cade remembers between runs (kept apart from the
 // hand-edited config.yaml, which cade only writes from the settings dialog).
 type state struct {
-	HideHints   bool `json:"hideHints"`
-	UnifiedDiff bool `json:"unifiedDiff"` // F3 overlay; side by side otherwise
+	HideHints    bool `json:"hideHints"`
+	UnifiedDiff  bool `json:"unifiedDiff"`  // F3 overlay; side by side otherwise
+	SidebarRight bool `json:"sidebarRight"` // left otherwise
 }
 
 func statePath() string { return filepath.Join(filepath.Dir(projectsPath()), "state.json") }
+
+func (a *app) saveState() { a.fail("save failed: ", writeJSON(statePath(), a.st)) }
 
 func loadState(path string) state {
 	var st state

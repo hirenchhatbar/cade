@@ -69,7 +69,7 @@ var sidebarKeys = []binding{
 	{keys: []string{"G", "End"}, run: func(a *app) { a.cursor = len(a.rows()) - 1 }},
 	{label: "⇥", keys: []string{"Tab"}, hint: "pane", show: hasPane, when: hasPane, help: "go to Claude pane",
 		run: func(a *app) { a.setFocus(true) }},
-	{label: ",", keys: []string{","}, hint: "settings", help: "settings: theme, hints, edit config.yaml in $EDITOR",
+	{label: ",", keys: []string{","}, hint: "settings", help: "settings: theme, hints, sidebar side, edit config.yaml in $EDITOR",
 		run: func(a *app) { a.set = &settings{} }},
 	{label: "?", keys: []string{"?"}, hint: "help", always: true, help: "this help", idle: "all shortcuts",
 		run: func(a *app) { a.help = true }},
@@ -222,7 +222,12 @@ func (a *app) moveSaved(dir int) {
 
 func (a *app) toggleHints() {
 	a.st.HideHints = !a.st.HideHints
-	a.fail("save failed: ", writeJSON(statePath(), a.st))
+	a.saveState()
+}
+
+func (a *app) toggleSide() {
+	a.st.SidebarRight = !a.st.SidebarRight
+	a.saveState()
 }
 
 // pressD waits ddWindow for a second d: d alone deletes a session, dd removes a project.
@@ -244,14 +249,15 @@ func (a *app) mouse(ev vaxis.Mouse) {
 	w, h := a.vx.Window().Size()
 	drag := ev.Button == vaxis.MouseLeftButton && ev.EventType != vaxis.EventRelease
 	a.hover = noBar
+	x, end := a.paneSpan(w)
 	switch {
-	case a.diff != nil && ev.Col >= a.paneX(): // the diff covers the pane
+	case a.diff != nil && ev.Col >= x && ev.Col < end: // the diff covers the pane
 		if ev.Button == vaxis.MouseWheelUp {
 			a.diff.pg.Offset = max(a.diff.pg.Offset-3, 0)
 		} else if ev.Button == vaxis.MouseWheelDown {
 			a.diff.pg.Offset += 3
 		}
-	case t != nil && ev.Col >= w-barW: // pane scrollbar
+	case t != nil && ev.Col >= end-barW && ev.Col < end: // pane scrollbar
 		a.hover = paneBar
 		if drag {
 			if !a.inTerm {
@@ -262,9 +268,11 @@ func (a *app) mouse(ev vaxis.Mouse) {
 		} else {
 			t.Update(ev) // wheel over the bar still scrolls
 		}
-	case ev.Col < a.paneX():
+	case ev.Col < x || ev.Col >= end:
+		ev.Col -= a.sideX(w)
 		a.sidebarMouse(ev, drag)
 	case t != nil:
+		ev.Col -= x
 		a.paneMouse(t, ev)
 	}
 }
@@ -307,7 +315,6 @@ func (a *app) paneMouse(t *term.Model, ev vaxis.Mouse) {
 			a.setFocus(true)
 		}
 	}
-	ev.Col -= a.paneX()
 	ev.Row -= titleH
 	t.Update(ev)
 	// cade captures the mouse, so the host terminal's copy-on-select can't run; do it here.
@@ -624,6 +631,7 @@ func (a *app) searchKey(k vaxis.Key) {
 const (
 	setTheme = iota
 	setHints
+	setSide
 	setEdit
 	settingRows
 )
@@ -647,5 +655,7 @@ func (a *app) settingsKey(k vaxis.Key) {
 		a.cycleTheme(1)
 	case st.sel == setHints && (change || k.MatchString("Left") || k.MatchString("Right")):
 		a.toggleHints()
+	case st.sel == setSide && (change || k.MatchString("Left") || k.MatchString("Right") || k.MatchString("h") || k.MatchString("l")):
+		a.toggleSide()
 	}
 }

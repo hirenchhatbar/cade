@@ -488,16 +488,32 @@ func (a *app) setFocus(inTerm bool) {
 
 func (a *app) paneSize() (int, int) {
 	w, h := a.vx.Window().Size()
-	return max(w-a.paneX()-barW, 1), max(h-1, 1) // scrollbar, title bar
+	x, end := a.paneSpan(w)
+	return max(end-x-barW, 1), max(h-1, 1) // scrollbar, title bar
 }
 
-// paneX is the pane's first column: past the sidebar and its separator, or 0 when
-// zoomed. Focusing the sidebar shows it again until the pane has focus back.
-func (a *app) paneX() int {
-	if a.zoom && (a.inTerm || a.diff != nil) {
-		return 0
+// sideShown reports whether the sidebar is on screen: zooming hides it while the
+// pane or diff has focus. Focusing the sidebar shows it again until the pane has focus back.
+func (a *app) sideShown() bool { return !a.zoom || (!a.inTerm && a.diff == nil) }
+
+// sideX is the sidebar's first column on a screen w wide.
+func (a *app) sideX(w int) int {
+	if a.st.SidebarRight {
+		return w - sideW
 	}
-	return sideW + 1
+	return 0
+}
+
+// paneSpan is the pane's first column and the column after its last on a screen
+// w wide: beside the sidebar and its separator, or the whole width when zoomed.
+func (a *app) paneSpan(w int) (x, end int) {
+	switch {
+	case !a.sideShown():
+		return 0, w
+	case a.st.SidebarRight:
+		return 0, w - sideW - 1
+	}
+	return sideW + 1, w
 }
 
 // toggleZoom hides or shows the sidebar; zooming with the sidebar focused moves to the pane.
