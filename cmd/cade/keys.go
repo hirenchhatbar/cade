@@ -243,6 +243,7 @@ func (a *app) mouse(ev vaxis.Mouse) {
 	t := a.terms[a.active]
 	w, h := a.vx.Window().Size()
 	drag := ev.Button == vaxis.MouseLeftButton && ev.EventType != vaxis.EventRelease
+	a.hover = noBar
 	switch {
 	case a.diff != nil && ev.Col >= a.paneX(): // the diff covers the pane
 		if ev.Button == vaxis.MouseWheelUp {
@@ -251,7 +252,11 @@ func (a *app) mouse(ev vaxis.Mouse) {
 			a.diff.pg.Offset += 3
 		}
 	case t != nil && ev.Col >= w-barW: // pane scrollbar
+		a.hover = paneBar
 		if drag {
+			if !a.inTerm {
+				a.setFocus(true)
+			}
 			_, m := t.ScrollInfo()
 			t.ScrollTo(offsetAt(ev.Row-titleH, h-titleH, m))
 		} else {
@@ -270,12 +275,19 @@ func (a *app) sidebarMouse(ev vaxis.Mouse, drag bool) {
 	}
 	rows := a.rows()
 	r := ev.Row - titleH
+	onBar := len(rows) > a.visible && ev.Col == sideW-1 && r >= 0 && r < a.visible
+	if onBar {
+		a.hover = sideBar
+	}
 	switch {
 	case ev.Button == vaxis.MouseWheelUp:
 		a.scroll(a.top - 3)
 	case ev.Button == vaxis.MouseWheelDown:
 		a.scroll(a.top + 3)
-	case len(rows) > a.visible && ev.Col == sideW-1 && r >= 0 && r < a.visible && drag: // tree scrollbar
+	case onBar && drag: // tree scrollbar
+		if a.inTerm {
+			a.setFocus(false)
+		}
 		m := len(rows) - a.visible
 		a.scroll(m - offsetAt(r, a.visible, m))
 	case ev.Button == vaxis.MouseLeftButton && ev.EventType == vaxis.EventPress && r >= 0 && r+a.top < len(rows):

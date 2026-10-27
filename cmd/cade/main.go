@@ -131,8 +131,18 @@ type app struct {
 	dSeq     int
 	selSeq   int  // bumped on every pane click, see clearSel
 	pasting  bool // inside a bracketed paste; drawing waits for its end
+	hover    bar  // scrollbar under the mouse pointer
 	quit     bool
 }
+
+// bar names a scrollbar.
+type bar int
+
+const (
+	noBar bar = iota
+	sideBar
+	paneBar
+)
 
 func main() {
 	if len(os.Args) > 1 {

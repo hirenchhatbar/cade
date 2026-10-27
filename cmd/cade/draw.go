@@ -70,13 +70,18 @@ func offsetAt(row, h, m int) int {
 }
 
 // scrollbar draws a cols-wide bar at column x, rows y..y+h, for a view scrolled
-// offset rows up from the bottom of m hidden rows.
-func (a *app) scrollbar(win vaxis.Window, x, cols, y, h, offset, m int) {
+// offset rows up from the bottom of m hidden rows. The thumb is greyed out
+// unless lit (its panel focused or the bar hovered).
+func (a *app) scrollbar(win vaxis.Window, x, cols, y, h, offset, m int, lit bool) {
 	top, size := thumb(h, offset, m)
+	thumbStyle := a.th.muted
+	if lit {
+		thumbStyle = a.th.thumb
+	}
 	for r := range h {
 		c := cell("░", a.th.muted)
 		if r >= top && r < top+size {
-			c = cell("█", a.th.thumb)
+			c = cell("█", thumbStyle)
 		}
 		for i := range cols {
 			win.SetCell(x+i, y+r, c)
@@ -213,7 +218,7 @@ func (a *app) drawSidebar(side vaxis.Window) {
 	}
 	if overflow && a.search == nil {
 		m := len(rows) - a.visible
-		a.scrollbar(tree, sideW-1, 1, 0, a.visible, m-a.top, m)
+		a.scrollbar(tree, sideW-1, 1, 0, a.visible, m-a.top, m, !a.inTerm || a.hover == sideBar)
 	}
 
 	y := treeH - reserved
@@ -313,7 +318,7 @@ func (a *app) drawPane(win vaxis.Window, w, h int) {
 	t.Resize(pw, ph)
 	t.Draw(win.New(x, titleH, pw, ph))
 	if off, m := t.ScrollInfo(); m > 0 {
-		a.scrollbar(win, w-barW, barW, titleH, ph, off, m)
+		a.scrollbar(win, w-barW, barW, titleH, ph, off, m, a.inTerm || a.hover == paneBar)
 	}
 	if !a.inTerm {
 		a.vx.HideCursor()
