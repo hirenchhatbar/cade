@@ -118,10 +118,10 @@ func TestCheckConfig(t *testing.T) {
 	}
 }
 
-func TestSaveTheme(t *testing.T) {
+func TestSaveConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-	if err := saveTheme(path, "terminal"); err != nil {
+	if err := saveConfig(path, "terminal", "theme"); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(path); string(b) != "theme: terminal\n" {
@@ -133,7 +133,7 @@ func TestSaveTheme(t *testing.T) {
 	os.Chmod(path, 0o600)
 	link := filepath.Join(dir, "link.yaml")
 	os.Symlink(path, link)
-	if err := saveTheme(link, "terminal"); err != nil {
+	if err := saveConfig(link, "terminal", "theme"); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(path)
@@ -148,8 +148,13 @@ func TestSaveTheme(t *testing.T) {
 	}
 
 	os.WriteFile(path, []byte("claude: {}\n"), 0o644)
-	saveTheme(path, "x")
+	saveConfig(path, "x", "theme")
 	if cfg, err := loadConfig(t, path); err != nil || cfg.Theme != "x" {
 		t.Fatalf("added key: %v %q", err, cfg.Theme)
+	}
+	os.WriteFile(path, []byte("quit:\n"), 0o644)
+	saveConfig(path, false, "quit", "confirm")
+	if cfg, err := loadConfig(t, path); err != nil || cfg.Quit.Confirm == nil || *cfg.Quit.Confirm {
+		t.Fatalf("nested key: %v %v", err, cfg.Quit.Confirm)
 	}
 }

@@ -613,7 +613,7 @@ func (a *app) cycleTheme(dir int) {
 	names := a.themeNames()
 	i := slices.Index(names, cmp.Or(a.cfg.Theme, defaultTheme))
 	name := names[((i+dir)%len(names)+len(names))%len(names)]
-	if err := saveTheme(configPath(), name); err != nil {
+	if err := saveConfig(configPath(), name, "theme"); err != nil {
 		a.fail("save failed: ", err)
 		return
 	}
@@ -622,3 +622,15 @@ func (a *app) cycleTheme(dir int) {
 	a.th, err = loadTheme(a.cfg)
 	a.fail("", err)
 }
+
+// toggleConfirmQuit flips quit.confirm, saving it to config.yaml.
+func (a *app) toggleConfirmQuit() {
+	confirm := !a.confirmQuit()
+	if err := saveConfig(configPath(), confirm, "quit", "confirm"); err != nil {
+		a.fail("save failed: ", err)
+		return
+	}
+	a.cfg.Quit.Confirm = &confirm
+}
+
+func (a *app) confirmQuit() bool { return a.cfg.Quit.Confirm == nil || *a.cfg.Quit.Confirm }

@@ -669,11 +669,16 @@ func (a *app) drawSettings(win vaxis.Window) {
 	if a.st.SidebarRight {
 		side = "‹ right ›"
 	}
+	quit := "☐"
+	if a.confirmQuit() {
+		quit = "☑"
+	}
 	editor := cmp.Or(os.Getenv("VISUAL"), os.Getenv("EDITOR"), "vi")
 	rows := [settingRows][2]string{
 		setTheme: {"Theme", "‹ " + cmp.Or(a.cfg.Theme, defaultTheme) + " ›"},
 		setHints: {"Hide hints", hints},
 		setSide:  {"Sidebar", side},
+		setQuit:  {"Confirm quit", quit},
 		setEdit:  {"Edit config.yaml", "in " + editor + ", checked on save"},
 	}
 	for i, r := range rows {

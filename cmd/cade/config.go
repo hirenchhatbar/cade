@@ -32,6 +32,9 @@ type config struct {
 	Toasts struct {
 		Position string `yaml:"position"` // corner, see toastPositions. Default: top-right
 	} `yaml:"toasts"`
+	Quit struct {
+		Confirm *bool `yaml:"confirm"` // ask before quitting while sessions run. Default: true
+	} `yaml:"quit"`
 }
 
 // account is one Claude login: how claude is started and where it keeps sessions.
@@ -191,10 +194,11 @@ func editDistance(a, b string) int {
 	return prev[len(rb)]
 }
 
-// saveTheme sets the theme key in config.yaml, creating the file if needed.
+// saveConfig sets one key in config.yaml, keys being its path from the top
+// (theme, or quit then confirm), creating the file and parent keys if needed.
 // It edits the yaml tree rather than re-encoding config, so comments and key
 // order survive; indentation is normalised to two spaces.
-func saveTheme(path, name string) error {
+func saveConfig(path string, val any, keys ...string) error {
 	if real, err := filepath.EvalSymlinks(path); err == nil {
 		path = real // a dotfiles symlink stays a symlink
 	}
@@ -213,17 +217,26 @@ func saveTheme(path, name string) error {
 	if m.Kind != yaml.MappingNode {
 		return errors.New("config.yaml is not a mapping")
 	}
-	i := 0
-	for i < len(m.Content) && m.Content[i].Value != "theme" {
-		i += 2 // keys and values alternate
-	}
-	if i < len(m.Content) {
-		m.Content[i+1].SetString(name)
-	} else {
-		key, val := &yaml.Node{}, &yaml.Node{}
-		key.SetString("theme")
-		val.SetString(name)
-		m.Content = append([]*yaml.Node{key, val}, m.Content...)
+	for d, k := range keys {
+		i := 0
+		for i < len(m.Content) && m.Content[i].Value != k {
+			i += 2 // keys and values alternate
+		}
+		if i == len(m.Content) {
+			key := &yaml.Node{}
+			key.SetString(k)
+			m.Content = append([]*yaml.Node{key, {Kind: yaml.MappingNode}}, m.Content...)
+			i = 0
+		}
+		if v := m.Content[i+1]; d == len(keys)-1 {
+			head, line, foot := v.HeadComment, v.LineComment, v.FootComment // Encode resets them
+			if err := v.Encode(val); err != nil {
+				return err
+			}
+			v.HeadComment, v.LineComment, v.FootComment = head, line, foot
+		} else if m = m.Content[i+1]; m.Kind != yaml.MappingNode {
+			*m = yaml.Node{Kind: yaml.MappingNode} // e.g. "quit:" left empty
+		}
 	}
 	var out bytes.Buffer
 	enc := yaml.NewEncoder(&out)

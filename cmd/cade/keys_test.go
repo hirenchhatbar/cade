@@ -257,4 +257,10 @@ func TestQuitAsks(t *testing.T) {
 	if !a.key(q) {
 		t.Fatal("nothing running: should quit at once")
 	}
+	no := false
+	a = &app{terms: map[string]*term.Model{"s1": term.New()}, active: "s1", inTerm: true}
+	a.cfg.Quit.Confirm = &no
+	if !a.key(q) {
+		t.Fatal("quit.confirm false: should quit at once")
+	}
 }

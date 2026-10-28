@@ -115,7 +115,7 @@ All files live in `~/.config/cade/` (`$XDG_CONFIG_HOME/cade/` if set; on macOS
 |---|---|---|
 | `projects.json` | cade | projects, their order and collapsed state, session titles and stars |
 | `state.json` | cade | remembered UI state (hints hidden, sidebar left or right, diff side by side or unified) |
-| `config.yaml` | you (cade writes only `theme`) | theme, diff, toasts, Claude accounts |
+| `config.yaml` | you (cade writes only `theme` and `quit.confirm`) | theme, diff, toasts, quit, Claude accounts |
 
 ### Themes
 
@@ -161,10 +161,21 @@ toasts:
   position: bottom-right
 ```
 
+### Quit
+
+`q` and `Ctrl+⇧Q` ask before quitting while Claude sessions or the shell run, since quitting
+closes them. To quit at once:
+
+```yaml
+quit:
+  confirm: false
+```
+
 ### Settings dialog
 
 `,` opens settings. Picking a theme applies at once and writes the `theme` key to `config.yaml`;
 the rest of the file, comments included, is kept (indentation is normalised to two spaces).
+"Confirm quit" switches `quit.confirm`, written to `config.yaml` the same way.
 "Sidebar" puts the sessions sidebar on the left (default) or right; it is saved in `state.json`.
 "Edit config.yaml" suspends cade and opens the file in `$VISUAL`, else `$EDITOR`, else `vi`. On
 save cade checks the file: a clean one takes effect at once (account changes apply to sessions

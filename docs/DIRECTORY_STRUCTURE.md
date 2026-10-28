@@ -4,7 +4,7 @@
 .
 ├── cmd/cade/            # the app: one `main` package, tests beside each file
 │   ├── main.go          # startup, event loop, layout, Claude pane
-│   ├── config.go        # config.yaml and Claude accounts
+│   ├── config.go        # config.yaml (read, check, saveConfig) and Claude accounts
 │   ├── keys.go          # key bindings: single source for handling, hints and help dialog
 │   ├── tree.go          # sidebar model: projects, sessions, cursor, scroll
 │   ├── projects.go      # project list, titles, starred sessions

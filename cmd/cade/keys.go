@@ -372,7 +372,7 @@ func (a *app) askQuit() {
 	if claude > 0 {
 		rows = append([][2]string{{"Claude", fmt.Sprintf("%d running", claude)}}, rows...)
 	}
-	if len(rows) == 0 {
+	if len(rows) == 0 || !a.confirmQuit() {
 		a.quit = true
 		return
 	}
@@ -632,6 +632,7 @@ const (
 	setTheme = iota
 	setHints
 	setSide
+	setQuit
 	setEdit
 	settingRows
 )
@@ -657,5 +658,7 @@ func (a *app) settingsKey(k vaxis.Key) {
 		a.toggleHints()
 	case st.sel == setSide && (change || k.MatchString("Left") || k.MatchString("Right") || k.MatchString("h") || k.MatchString("l")):
 		a.toggleSide()
+	case st.sel == setQuit && (change || k.MatchString("Left") || k.MatchString("Right")):
+		a.toggleConfirmQuit()
 	}
 }
