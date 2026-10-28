@@ -28,8 +28,9 @@ type binding struct {
 	run    func(*app)
 }
 
-func hasPane(a *app) bool { return a.terms[a.active] != nil }
-func noPane(a *app) bool  { return !hasPane(a) }
+func hasPane(a *app) bool    { return a.terms[a.active] != nil }
+func shellShown(a *app) bool { return a.shellOn }
+func noPane(a *app) bool     { return !hasPane(a) }
 
 var sidebarKeys = []binding{
 	{label: "j/k", keys: []string{"j", "Down"}, hint: "move", help: "move down / up (also ↓/↑)",
@@ -69,7 +70,7 @@ var sidebarKeys = []binding{
 	{keys: []string{"G", "End"}, run: func(a *app) { a.cursor = len(a.rows()) - 1 }},
 	{label: "⇥", keys: []string{"Tab"}, hint: "pane", show: hasPane, when: hasPane, help: "go to Claude pane",
 		run: func(a *app) { a.setFocus(true) }},
-	{label: ",", keys: []string{","}, hint: "settings", help: "settings: theme, hints, sidebar side, edit config.yaml in $EDITOR",
+	{label: ",", keys: []string{","}, hint: "settings", help: "settings: theme, hints, sidebar side, shell height, edit config.yaml in $EDITOR",
 		run: func(a *app) { a.set = &settings{} }},
 	{label: "?", keys: []string{"?"}, hint: "help", always: true, help: "this help", idle: "all shortcuts",
 		run: func(a *app) { a.help = true }},
@@ -87,7 +88,7 @@ var paneKeys = []binding{
 		help: "git diff of the session's project, sidebar too; s: side by side ↔ unified; ^D/^U: half page",
 		run:  (*app).openDiff},
 	{label: shellKey, keys: []string{shellKey}, hint: "shell",
-		help: "one shell for the app, started in the project's directory, over the pane, sidebar too; again goes back",
+		help: "one shell for the app, started in the project's directory, split under the pane, sidebar too; again hides it",
 		run:  (*app).toggleShell},
 	{label: waitLbl, keys: []string{waitKey}, hint: "waiting", show: func(a *app) bool { return len(a.attn) > 0 },
 		help: "focus next waiting session (◆), oldest first, sidebar too", run: (*app).focusWaiting},
@@ -101,6 +102,11 @@ var paneKeys = []binding{
 	{label: "^⇧↑/^⇧↓", keys: []string{"Ctrl+Shift+Up"}, hint: "project", help: "go to sidebar, previous / next project, sidebar too",
 		run: toSidebar((*app).prevProject)},
 	{keys: []string{"Ctrl+Shift+Down"}, run: toSidebar((*app).nextProject)},
+	{label: "⌥↑/⌥↓", keys: []string{"Alt+Up"}, hint: "session/shell", show: (*app).split, when: (*app).split,
+		help: "with the shell split under the session: focus the session / the shell", run: func(a *app) { a.show(a.back) }},
+	{keys: []string{"Alt+Down"}, when: (*app).split, run: func(a *app) { a.show(shellID) }},
+	{label: fullKey, keys: []string{fullKey}, hint: "full shell", show: shellShown, when: shellShown,
+		help: "shell full height ↔ split under the session, remembered; split height in , settings", run: (*app).toggleShellFull},
 	{label: "⇧PgUp/Dn", keys: []string{"Page_Up", "Shift+Page_Up"}, hint: "scroll", help: "scroll back / forward (PgUp/PgDn too)",
 		when: hasScrollback, run: func(a *app) { a.pageScroll(1) }},
 	{keys: []string{"Page_Down", "Shift+Page_Down"}, when: hasScrollback, run: func(a *app) { a.pageScroll(-1) }},
@@ -261,9 +267,16 @@ func (a *app) pressD() {
 
 // mouse routes a mouse event to the pane scrollbar, the sidebar or the Claude pane.
 func (a *app) mouse(ev vaxis.Mouse) {
-	t := a.terms[a.active]
 	w, h := a.vx.Window().Size()
+	p := a.paneTermAt(ev.Row, h)
+	t := a.terms[p.key]
 	drag := ev.Button == vaxis.MouseLeftButton && ev.EventType != vaxis.EventRelease
+	if ev.Button == vaxis.MouseLeftButton {
+		a.grab = ""
+		if ev.EventType == vaxis.EventPress {
+			a.grab = p.key
+		}
+	}
 	a.hover = noBar
 	x, end := a.paneSpan(w)
 	switch {
@@ -280,7 +293,7 @@ func (a *app) mouse(ev vaxis.Mouse) {
 				a.setFocus(true)
 			}
 			_, m := t.ScrollInfo()
-			t.ScrollTo(offsetAt(ev.Row-titleH, h-titleH, m))
+			t.ScrollTo(offsetAt(ev.Row-p.y, p.h, m))
 		} else {
 			t.Update(ev) // wheel over the bar still scrolls
 		}
@@ -288,9 +301,21 @@ func (a *app) mouse(ev vaxis.Mouse) {
 		ev.Col -= a.sideX(w)
 		a.sidebarMouse(ev, drag)
 	case t != nil:
-		ev.Col -= x
+		ev.Col, ev.Row = ev.Col-x, ev.Row-p.y
 		a.paneMouse(t, ev)
 	}
+}
+
+// paneTermAt is the pane term at row of a screen h tall, its title bar included,
+// or the one a left drag started in, so a selection can't jump to the other term.
+func (a *app) paneTermAt(row, h int) paneTerm {
+	ps := a.paneTerms(h)
+	for _, p := range ps {
+		if p.key == a.grab || a.grab == "" && row < p.y+p.h {
+			return p
+		}
+	}
+	return ps[len(ps)-1]
 }
 
 func (a *app) sidebarMouse(ev vaxis.Mouse, drag bool) {
@@ -331,7 +356,6 @@ func (a *app) paneMouse(t *term.Model, ev vaxis.Mouse) {
 			a.setFocus(true)
 		}
 	}
-	ev.Row -= titleH
 	t.Update(ev)
 	// cade captures the mouse, so the host terminal's copy-on-select can't run; do it here.
 	if ev.Button == vaxis.MouseLeftButton && ev.EventType == vaxis.EventRelease && t.HasSelection() {
@@ -648,6 +672,7 @@ const (
 	setTheme = iota
 	setHints
 	setSide
+	setShell
 	setQuit
 	setEdit
 	settingRows
@@ -674,6 +699,10 @@ func (a *app) settingsKey(k vaxis.Key) {
 		a.toggleHints()
 	case st.sel == setSide && (change || k.MatchString("Left") || k.MatchString("Right") || k.MatchString("h") || k.MatchString("l")):
 		a.toggleSide()
+	case st.sel == setShell && (k.MatchString("Left") || k.MatchString("h")):
+		a.stepShellHeight(-1)
+	case st.sel == setShell && (change || k.MatchString("Right") || k.MatchString("l")):
+		a.stepShellHeight(1)
 	case st.sel == setQuit && (change || k.MatchString("Left") || k.MatchString("Right")):
 		a.toggleConfirmQuit()
 	}

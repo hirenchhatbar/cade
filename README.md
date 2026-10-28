@@ -73,7 +73,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `d/dd` | d: delete session from disk · dd: remove project from list (both ask) |
 | `g/G` | top / end |
 | `⇥` | go to Claude pane |
-| `,` | settings: theme, hints, sidebar side, edit config.yaml in $EDITOR |
+| `,` | settings: theme, hints, sidebar side, shell height, edit config.yaml in $EDITOR |
 | `?` | this help |
 | `q` | quit (asks while sessions run) |
 | `H` | show / hide these hints |
@@ -84,12 +84,14 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 |---|---|
 | `Ctrl+Esc` | switch sidebar ↔ pane (also F12) |
 | `F3` | git diff of the session's project, sidebar too; s: side by side ↔ unified |
-| `F2` | one shell for the app, started in the project's directory, over the pane, sidebar too; again goes back |
+| `F2` | one shell for the app, started in the project's directory, split under the pane, sidebar too; again hides it |
 | `Ctrl+F` | focus next waiting session (◆), oldest first, sidebar too |
 | `F4/^Z` | hide / show the sidebar (Ctrl+Z too, except in the shell), sidebar too |
 | `Ctrl+⇧Q` | quit cade, sidebar too (asks while sessions run) |
 | `^↑/^↓` | go to sidebar, cursor up / down, sidebar too |
 | `^⇧↑/^⇧↓` | go to sidebar, previous / next project, sidebar too |
+| `⌥↑/⌥↓` | with the shell split under the session: focus the session / the shell |
+| `F11` | shell full height ↔ split under the session, remembered; split height in , settings |
 | `⇧PgUp/Dn` | scroll back / forward (PgUp/PgDn too) |
 | `wheel` | scroll; or drag the scrollbar |
 | `drag` | select text, 2×click word, 3×click line → copied |
@@ -116,8 +118,8 @@ All files live in `~/.config/cade/` (`$XDG_CONFIG_HOME/cade/` if set; on macOS
 | File | Written by | Contents |
 |---|---|---|
 | `projects.json` | cade | projects, their order and collapsed state, session titles and stars |
-| `state.json` | cade | remembered UI state (hints hidden, sidebar left or right, diff side by side or unified) |
-| `config.yaml` | you (cade writes only `theme` and `quit.confirm`) | theme, diff, toasts, quit, Claude accounts |
+| `state.json` | cade | remembered UI state (hints hidden, sidebar left or right, diff side by side or unified, shell full or split) |
+| `config.yaml` | you (cade writes only `theme`, `quit.confirm` and `shell.height`) | theme, diff, toasts, quit, shell, Claude accounts |
 
 ### Themes
 
@@ -173,12 +175,26 @@ quit:
   confirm: false
 ```
 
+### Shell
+
+`F2` opens the shell split under the session, so you can copy from Claude while typing in the
+shell: a drag in either half selects and copies, and keys go to the half that has focus.
+`⌥↑/⌥↓` move the focus between them. `F11` makes the shell full height and back; cade
+remembers the choice. Some terminals keep `F11` for their own fullscreen; turn that off there.
+The shell takes 50% of the pane by default, from 10 to 90:
+
+```yaml
+shell:
+  height: 40
+```
+
 ### Settings dialog
 
 `,` opens settings. Picking a theme applies at once and writes the `theme` key to `config.yaml`;
 the rest of the file, comments included, is kept (indentation is normalised to two spaces).
 "Confirm quit" switches `quit.confirm`, written to `config.yaml` the same way.
 "Sidebar" puts the sessions sidebar on the left (default) or right; it is saved in `state.json`.
+"Shell height" steps `shell.height` by 10%, written to `config.yaml` the same way.
 "Edit config.yaml" suspends cade and opens the file in `$VISUAL`, else `$EDITOR`, else `vi`. On
 save cade checks the file: a clean one takes effect at once (account changes apply to sessions
 started after it), otherwise the dialog lists the issues and the config from before the edit stays

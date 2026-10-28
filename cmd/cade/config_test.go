@@ -66,6 +66,7 @@ claude:
 		"claude:\n  accounts:\n    a: {}\n    b: {}\n", // two accounts, no default
 		"claude:\n  accounts:\n    a: {comand: [x]}\n",
 		"theme: [",
+		"shell: {height: 95}\n",
 	} {
 		write(bad)
 		if _, err := loadConfig(t, path); err == nil {

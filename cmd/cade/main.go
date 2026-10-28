@@ -34,6 +34,10 @@ const (
 	quitKey   = "Ctrl+Shift+q" // needs the kitty keyboard protocol, like Ctrl+Esc; sidebar q always works
 	quitLbl   = "Ctrl+⇧Q"
 	shellID   = "shell" // the one app-wide shell in terms
+	fullKey   = "F11"
+	shellMin  = 10 // shell.height bounds and settings step, in % of the pane
+	shellMax  = 90
+	shellStep = 10
 	newRowLbl = "[n] new session"
 	selLinger = 600 * time.Millisecond // selection stays highlighted this long after a copy
 	ddWindow  = 400 * time.Millisecond // a second d within this means dd
@@ -113,6 +117,8 @@ type app struct {
 	active   string   // key into terms
 	back     string   // pane shown before the shell, which F2 returns to
 	shellDir string   // project dir the shell was started in
+	shellOn  bool     // shell on screen, under terms[back] when split, see paneTerms
+	grab     string   // term a left drag started in; it gets the drag until release
 	inTerm   bool     // keyboard focus on the Claude pane
 	zoom     bool     // sidebar hidden while the pane or diff has focus; not remembered
 	attn     []string // sessions that rang for attention, oldest first
@@ -378,8 +384,12 @@ func (a *app) open() {
 	a.show(key)
 }
 
-// show puts terms[key] in the pane and focuses it.
+// show puts terms[key] in the pane and focuses it; any session but the one split
+// above the shell hides the shell.
 func (a *app) show(key string) {
+	if key != shellID && (key != a.back || a.st.ShellFull) {
+		a.shellOn = false
+	}
 	if prev := a.terms[a.active]; prev != nil && a.active != key {
 		prev.Blur()
 	}
@@ -387,14 +397,18 @@ func (a *app) show(key string) {
 	a.setFocus(true)
 }
 
-// toggleShell shows the app's one $SHELL over the pane, starting it in the cursor's
-// project dir if needed; on that shell it hides it, still running, back to the pane
-// shown before, or the empty pane if there was none.
+// toggleShell shows the app's one $SHELL under the pane shown before (see paneTerms),
+// starting it in the cursor's project dir if needed; when shown it hides it, still
+// running, back to that pane, or the empty pane if there was none.
 func (a *app) toggleShell() {
 	a.diff = nil
 	p := a.projects[a.current().p]
 	key := shellID
-	if a.active == key {
+	if a.shellOn {
+		a.shellOn = false
+		if a.active != key {
+			return
+		}
 		if a.terms[a.back] != nil {
 			a.show(a.back)
 		} else {
@@ -418,7 +432,16 @@ func (a *app) toggleShell() {
 		a.shellDir = p.Dir
 	}
 	a.back = a.active
+	a.shellOn = true
 	a.show(key)
+}
+
+// toggleShellFull switches the shell between full height and split under the
+// session, remembered, and focuses it.
+func (a *app) toggleShellFull() {
+	a.st.ShellFull = !a.st.ShellFull
+	a.saveState()
+	a.show(shellID)
 }
 
 // refresh reloads every project's sessions from disk and keeps the cursor on the same row.
@@ -468,8 +491,17 @@ func (a *app) closeTerm(id string) {
 		t.Close()
 		delete(a.terms, id)
 		a.clearAttn(id)
+		if id == shellID {
+			a.shellOn = false
+		}
 		if a.active == id {
 			a.active, a.inTerm = "", false
+			switch {
+			case a.shellOn: // the session above the shell ended: the shell fills the pane
+				a.active = shellID
+			case id == shellID && a.terms[a.back] != nil:
+				a.active = a.back
+			}
 		}
 	}
 }
@@ -491,8 +523,38 @@ func (a *app) setFocus(inTerm bool) {
 func (a *app) paneSize() (int, int) {
 	w, h := a.vx.Window().Size()
 	x, end := a.paneSpan(w)
-	return max(end-x-barW, 1), max(h-1, 1) // scrollbar, title bar
+	ph := h - titleH
+	if a.diff == nil { // the diff covers the whole pane
+		for _, p := range a.paneTerms(h) {
+			if p.key == a.active {
+				ph = p.h
+			}
+		}
+	}
+	return max(end-x-barW, 1), max(ph, 1) // scrollbar
 }
+
+// paneTerm is a term on screen: its key in terms, and its first row and height
+// under its title bar.
+type paneTerm struct {
+	key  string
+	y, h int
+}
+
+// paneTerms lays out the pane's terms on a screen h tall, top to bottom: the
+// session and the shell under it, which takes shell.height % of the rows, or the
+// active term alone.
+func (a *app) paneTerms(h int) []paneTerm {
+	rows := h - 2*titleH
+	if !a.split() || rows < 2 {
+		return []paneTerm{{a.active, titleH, h - titleH}}
+	}
+	sh := min(max(rows*a.shellHeight()/100, 1), rows-1)
+	return []paneTerm{{a.back, titleH, rows - sh}, {shellID, h - sh, sh}}
+}
+
+// split reports whether the shell shares the pane with the session it was opened over.
+func (a *app) split() bool { return a.shellOn && !a.st.ShellFull && a.terms[a.back] != nil }
 
 // sideShown reports whether the sidebar is on screen: zooming hides it while the
 // pane or diff has focus. Focusing the sidebar shows it again until the pane has focus back.
@@ -632,5 +694,17 @@ func (a *app) toggleConfirmQuit() {
 	}
 	a.cfg.Quit.Confirm = &confirm
 }
+
+// stepShellHeight changes shell.height by dir steps, saving it to config.yaml.
+func (a *app) stepShellHeight(dir int) {
+	h := min(max(a.shellHeight()+dir*shellStep, shellMin), shellMax)
+	if err := saveConfig(configPath(), h, "shell", "height"); err != nil {
+		a.fail("save failed: ", err)
+		return
+	}
+	a.cfg.Shell.Height = h
+}
+
+func (a *app) shellHeight() int { return cmp.Or(a.cfg.Shell.Height, 50) }
 
 func (a *app) confirmQuit() bool { return a.cfg.Quit.Confirm == nil || *a.cfg.Quit.Confirm }

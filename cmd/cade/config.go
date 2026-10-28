@@ -17,8 +17,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// config is config.yaml, the file the user edits. cade writes only its theme
-// key, from the settings dialog, keeping the rest of the file as it is.
+// config is config.yaml, the file the user edits. cade writes only the keys the
+// settings dialog changes, keeping the rest of the file as it is.
 type config struct {
 	Theme  string             `yaml:"theme"`
 	Themes map[string]palette `yaml:"themes"` // user themes; empty fields inherit from dracula
@@ -35,6 +35,9 @@ type config struct {
 	Quit struct {
 		Confirm *bool `yaml:"confirm"` // ask before quitting while sessions run. Default: true
 	} `yaml:"quit"`
+	Shell struct {
+		Height int `yaml:"height"` // % of the pane the F2 shell takes under the session, see shellMin. Default: 50
+	} `yaml:"shell"`
 }
 
 // account is one Claude login: how claude is started and where it keeps sessions.
@@ -81,6 +84,9 @@ func parseConfig(path string) (cfg config, issues []string, err error) {
 	}
 	if p := cfg.Toasts.Position; p != "" && !slices.Contains(toastPositions, p) {
 		issues = append(issues, fmt.Sprintf("toasts.position: %q is not one of %s", p, strings.Join(toastPositions, ", ")))
+	}
+	if h := cfg.Shell.Height; h != 0 && (h < shellMin || h > shellMax) {
+		issues = append(issues, fmt.Sprintf("shell.height: %d is not between %d and %d", h, shellMin, shellMax))
 	}
 	return cfg, issues, nil
 }

@@ -175,6 +175,46 @@ func TestShellToggle(t *testing.T) {
 	}
 }
 
+// The shell splits the pane under the session it was opened over; Alt+↑/↓ move
+// focus between them, F11 makes the shell full height, and its split height is set.
+func TestShellSplit(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}, {ID: "s2"}}}}},
+		terms: map[string]*term.Model{"s1": term.New(), "s2": term.New(), shellID: term.New()}, active: "s1", inTerm: true}
+	a.key(vaxis.Key{Keycode: vaxis.KeyF02})
+	if ps := a.paneTerms(42); len(ps) != 2 || ps[0] != (paneTerm{"s1", 1, 20}) || ps[1] != (paneTerm{shellID, 22, 20}) {
+		t.Fatalf("split: %v", ps)
+	}
+	if p := a.paneTermAt(21, 42); p.key != shellID { // the shell's title bar
+		t.Fatalf("row 21: %q", p.key)
+	}
+	a.key(vaxis.Key{Keycode: vaxis.KeyUp, Modifiers: vaxis.ModAlt})
+	if a.active != "s1" || !a.inTerm || !a.shellOn {
+		t.Fatalf("Alt+Up: active %q inTerm %v shellOn %v", a.active, a.inTerm, a.shellOn)
+	}
+	a.key(vaxis.Key{Keycode: vaxis.KeyDown, Modifiers: vaxis.ModAlt})
+	if a.active != shellID {
+		t.Fatalf("Alt+Down: active %q", a.active)
+	}
+	a.key(vaxis.Key{Keycode: vaxis.KeyF11})
+	if ps := a.paneTerms(42); !a.st.ShellFull || len(ps) != 1 || ps[0].key != shellID || loadState(statePath()).ShellFull != true {
+		t.Fatalf("F11: full %v panes %v", a.st.ShellFull, ps)
+	}
+	a.key(vaxis.Key{Keycode: vaxis.KeyF11})
+	a.cfg.Shell.Height = 30
+	if ps := a.paneTerms(42); a.st.ShellFull || len(ps) != 2 || ps[1].h != 12 {
+		t.Fatalf("F11 again: full %v panes %v", a.st.ShellFull, ps)
+	}
+	a.closeTerm("s1") // the session above ends: the shell fills the pane
+	if ps := a.paneTerms(42); a.active != shellID || !a.shellOn || len(ps) != 1 {
+		t.Fatalf("session closed: active %q panes %v", a.active, ps)
+	}
+	a.show("s2") // another session hides the shell
+	if a.shellOn || a.split() {
+		t.Fatal("s2 should hide the shell")
+	}
+}
+
 // Pasted text in the sidebar must not run shortcuts, e.g. q quitting.
 func TestPasteIsNotShortcut(t *testing.T) {
 	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}}}

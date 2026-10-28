@@ -318,12 +318,24 @@ func (a *app) drawPane(win vaxis.Window, w, h int) {
 		a.drawIdle(win.New(x, titleH, end-x, h-titleH))
 		return
 	}
-	a.titleBar(title, " "+a.titleOf(a.active), waiting, a.inTerm)
-	pw, ph := a.paneSize()
-	t.Resize(pw, ph)
-	t.Draw(win.New(x, titleH, pw, ph))
-	if off, m := t.ScrollInfo(); m > 0 {
-		a.scrollbar(win, end-barW, barW, titleH, ph, off, m, a.inTerm || a.hover == paneBar)
+	pw, _ := a.paneSize()
+	ps := a.paneTerms(h)
+	if ps[0].key == a.active { // each term's Draw shows its cursor, and the last one shown wins
+		slices.Reverse(ps)
+	}
+	for _, p := range ps {
+		t := a.terms[p.key]
+		on := a.inTerm && p.key == a.active
+		right := ""
+		if p.y == titleH {
+			right = waiting
+		}
+		a.titleBar(win.New(x, p.y-titleH, end-x, titleH), " "+a.titleOf(p.key), right, on)
+		t.Resize(pw, p.h)
+		t.Draw(win.New(x, p.y, pw, p.h))
+		if off, m := t.ScrollInfo(); m > 0 {
+			a.scrollbar(win, end-barW, barW, p.y, p.h, off, m, on || a.hover == paneBar)
+		}
 	}
 	if !a.inTerm {
 		a.vx.HideCursor()
@@ -678,6 +690,7 @@ func (a *app) drawSettings(win vaxis.Window) {
 		setTheme: {"Theme", "‹ " + cmp.Or(a.cfg.Theme, defaultTheme) + " ›"},
 		setHints: {"Hide hints", hints},
 		setSide:  {"Sidebar", side},
+		setShell: {"Shell height", fmt.Sprintf("‹ %d%% ›", a.shellHeight())},
 		setQuit:  {"Confirm quit", quit},
 		setEdit:  {"Edit config.yaml", "in " + editor + ", checked on save"},
 	}

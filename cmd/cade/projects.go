@@ -70,6 +70,7 @@ type state struct {
 	HideHints    bool `json:"hideHints"`
 	UnifiedDiff  bool `json:"unifiedDiff"`  // F3 overlay; side by side otherwise
 	SidebarRight bool `json:"sidebarRight"` // left otherwise
+	ShellFull    bool `json:"shellFull"`    // F11: shell fills the pane; split under the session otherwise
 }
 
 func statePath() string { return filepath.Join(filepath.Dir(projectsPath()), "state.json") }
