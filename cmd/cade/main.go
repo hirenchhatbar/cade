@@ -17,7 +17,7 @@ import (
 
 const (
 	appName  = "cade"
-	version  = "0.1.2"
+	version  = "0.1.3"
 	appLabel = appName + " v" + version
 	sideW    = 42
 	barW     = 2             // scrollbar columns
