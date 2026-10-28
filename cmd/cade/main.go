@@ -280,6 +280,8 @@ func (a *app) handle(ev vaxis.Event) bool {
 	switch ev := ev.(type) {
 	case vaxis.Key:
 		return a.key(ev)
+	case vaxis.Resize:
+		a.vx.Resize(ev) // also forces a full repaint: rows the terminal dropped while smaller come back blank
 	case vaxis.PasteStartEvent, vaxis.PasteEndEvent, vaxis.FocusIn, vaxis.FocusOut, vaxis.ColorThemeUpdate:
 		if t := a.terms[a.active]; a.inTerm && t != nil {
 			t.Update(ev)
