@@ -88,6 +88,8 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `Ctrl+F` | focus next waiting session (◆), oldest first, sidebar too |
 | `F4/^Z` | hide / show the sidebar (Ctrl+Z too, except in the shell), sidebar too |
 | `Ctrl+⇧Q` | quit cade, sidebar too (asks while sessions run) |
+| `^↑/^↓` | go to sidebar, cursor up / down, sidebar too |
+| `^⇧↑/^⇧↓` | go to sidebar, previous / next project, sidebar too |
 | `⇧PgUp/Dn` | scroll back / forward (PgUp/PgDn too) |
 | `wheel` | scroll; or drag the scrollbar |
 | `drag` | select text, 2×click word, 3×click line → copied |

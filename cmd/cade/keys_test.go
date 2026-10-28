@@ -237,6 +237,24 @@ func TestZoom(t *testing.T) {
 	}
 }
 
+// Ctrl+↑/↓ and Ctrl+⇧↑/↓ move the sidebar cursor from the pane and focus the sidebar.
+func TestCursorKeysFromPane(t *testing.T) {
+	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}, {Name: "b", Dir: "/b"}}},
+		terms: map[string]*term.Model{"s1": term.New()}, active: "s1", inTerm: true}
+	press := func(code rune, mods vaxis.ModifierMask, want int) {
+		t.Helper()
+		a.inTerm = true
+		a.key(vaxis.Key{Keycode: code, Modifiers: mods})
+		if a.cursor != want || a.inTerm || a.active != "s1" {
+			t.Fatalf("cursor %d want %d, inTerm %v active %q", a.cursor, want, a.inTerm, a.active)
+		}
+	}
+	press(vaxis.KeyDown, vaxis.ModCtrl, 1)
+	press(vaxis.KeyDown, vaxis.ModCtrl|vaxis.ModShift, 3)
+	press(vaxis.KeyUp, vaxis.ModCtrl|vaxis.ModShift, 0)
+	press(vaxis.KeyUp, vaxis.ModCtrl, 0)
+}
+
 // Ctrl+Shift+Q quits from the pane and the diff, asking first while sessions run.
 func TestQuitAsks(t *testing.T) {
 	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}},

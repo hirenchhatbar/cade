@@ -33,11 +33,11 @@ func noPane(a *app) bool  { return !hasPane(a) }
 
 var sidebarKeys = []binding{
 	{label: "j/k", keys: []string{"j", "Down"}, hint: "move", help: "move down / up (also ↓/↑)",
-		run: func(a *app) { a.cursor = min(a.cursor+1, len(a.rows())-1) }},
-	{keys: []string{"k", "Up"}, run: func(a *app) { a.cursor = max(a.cursor-1, 0) }},
+		run: (*app).down},
+	{keys: []string{"k", "Up"}, run: (*app).up},
 	{label: "⇧↑/⇧↓", keys: []string{"Shift+Up"}, hint: "project", help: "previous / next project",
-		run: func(a *app) { a.cursor = a.header(-1) }},
-	{keys: []string{"Shift+Down"}, run: func(a *app) { a.cursor = a.header(1) }},
+		run: (*app).prevProject},
+	{keys: []string{"Shift+Down"}, run: (*app).nextProject},
 	{label: "l/⏎", keys: []string{"Enter", "l"}, hint: "open", help: "open session (click works too; new one on a project row)",
 		idle: "open selected session", run: (*app).open},
 	{label: "n", keys: []string{"n"}, hint: "new session", help: "new session in this project", idle: "new session",
@@ -79,7 +79,7 @@ var sidebarKeys = []binding{
 }
 
 // paneKeys apply while the Claude pane has focus; everything else goes to Claude.
-// The focus, diff, shell and waiting keys are checked first, in any focus state.
+// The keys up to the scroll keys (paneKeys[:11]) are checked first, in any focus state.
 var paneKeys = []binding{
 	{label: focusLbl, keys: []string{focusKey, focusAlt}, hint: "sidebar", help: "switch sidebar ↔ pane (also " + focusAlt + ")",
 		when: hasPane, run: func(a *app) { a.setFocus(!a.inTerm) }},
@@ -95,6 +95,12 @@ var paneKeys = []binding{
 		help: "hide / show the sidebar (Ctrl+Z too, except in the shell), sidebar too", run: (*app).toggleZoom},
 	{keys: []string{zoomAlt}, when: func(a *app) bool { return a.active != shellID }, run: (*app).toggleZoom},
 	{label: quitLbl, keys: []string{quitKey}, help: "quit cade, sidebar too (asks while sessions run)", run: (*app).askQuit},
+	{label: "^↑/^↓", keys: []string{"Ctrl+Up"}, hint: "row", help: "go to sidebar, cursor up / down, sidebar too",
+		run: toSidebar((*app).up)},
+	{keys: []string{"Ctrl+Down"}, run: toSidebar((*app).down)},
+	{label: "^⇧↑/^⇧↓", keys: []string{"Ctrl+Shift+Up"}, hint: "project", help: "go to sidebar, previous / next project, sidebar too",
+		run: toSidebar((*app).prevProject)},
+	{keys: []string{"Ctrl+Shift+Down"}, run: toSidebar((*app).nextProject)},
 	{label: "⇧PgUp/Dn", keys: []string{"Page_Up", "Shift+Page_Up"}, hint: "scroll", help: "scroll back / forward (PgUp/PgDn too)",
 		when: hasScrollback, run: func(a *app) { a.pageScroll(1) }},
 	{keys: []string{"Page_Down", "Shift+Page_Down"}, when: hasScrollback, run: func(a *app) { a.pageScroll(-1) }},
@@ -154,7 +160,7 @@ func (a *app) key(k vaxis.Key) bool {
 		return false
 	}
 	// prompts and help keep Esc for cancel
-	if b := a.match(paneKeys[:7], k); b != nil && !paste && (a.inTerm || !a.help && a.input == nil && a.rename == nil && a.search == nil && a.set == nil) {
+	if b := a.match(paneKeys[:11], k); b != nil && !paste && (a.inTerm || !a.help && a.input == nil && a.rename == nil && a.search == nil && a.set == nil) {
 		if !release {
 			b.run(a)
 		}
@@ -191,6 +197,16 @@ func (a *app) key(k vaxis.Key) bool {
 		}
 	}
 	return a.quit
+}
+
+func (a *app) down()        { a.cursor = min(a.cursor+1, len(a.rows())-1) }
+func (a *app) up()          { a.cursor = max(a.cursor-1, 0) }
+func (a *app) prevProject() { a.cursor = a.header(-1) }
+func (a *app) nextProject() { a.cursor = a.header(1) }
+
+// toSidebar focuses the sidebar before move, so every sidebar key works next.
+func toSidebar(move func(*app)) func(*app) {
+	return func(a *app) { a.setFocus(false); move(a) }
 }
 
 // pageScroll scrolls the pane one page back (dir>0) or forward (dir<0).
