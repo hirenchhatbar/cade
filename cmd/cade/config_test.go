@@ -67,6 +67,7 @@ claude:
 		"claude:\n  accounts:\n    a: {comand: [x]}\n",
 		"theme: [",
 		"shell: {height: 95}\n",
+		"diff: {height: 5}\n",
 	} {
 		write(bad)
 		if _, err := loadConfig(t, path); err == nil {

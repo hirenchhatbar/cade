@@ -28,9 +28,8 @@ type binding struct {
 	run    func(*app)
 }
 
-func hasPane(a *app) bool    { return a.terms[a.active] != nil }
-func shellShown(a *app) bool { return a.shellOn }
-func noPane(a *app) bool     { return !hasPane(a) }
+func hasPane(a *app) bool { return a.terms[a.active] != nil }
+func noPane(a *app) bool  { return !hasPane(a) }
 
 var sidebarKeys = []binding{
 	{label: "j/k", keys: []string{"j", "Down"}, hint: "move", help: "move down / up (also ↓/↑)",
@@ -70,7 +69,10 @@ var sidebarKeys = []binding{
 	{keys: []string{"G", "End"}, run: func(a *app) { a.cursor = len(a.rows()) - 1 }},
 	{label: "⇥", keys: []string{"Tab"}, hint: "pane", show: hasPane, when: hasPane, help: "go to Claude pane",
 		run: func(a *app) { a.setFocus(true) }},
-	{label: ",", keys: []string{","}, hint: "settings", help: "settings: theme, hints, sidebar side, shell height, edit config.yaml in $EDITOR",
+	{label: "-/+", keys: []string{"-"}, hint: "width", help: "narrower / wider sidebar (or drag the line beside it), remembered",
+		run: func(a *app) { a.stepSide(-1) }},
+	{keys: []string{"+", "="}, run: func(a *app) { a.stepSide(1) }},
+	{label: ",", keys: []string{","}, hint: "settings", help: "settings: theme, hints, sidebar side and width, shell and diff height, editor, edit config.yaml in $EDITOR",
 		run: func(a *app) { a.set = &settings{} }},
 	{label: "?", keys: []string{"?"}, hint: "help", always: true, help: "this help", idle: "all shortcuts",
 		run: func(a *app) { a.help = true }},
@@ -80,18 +82,23 @@ var sidebarKeys = []binding{
 }
 
 // paneKeys apply while the Claude pane has focus; everything else goes to Claude.
-// The keys up to the scroll keys (paneKeys[:11]) are checked first, in any focus state.
+// The keys up to the scroll keys (paneKeys[:12]) are checked first, in any focus state.
 var paneKeys = []binding{
 	{label: focusLbl, keys: []string{focusKey, focusAlt}, hint: "sidebar", help: "switch sidebar ↔ pane (also " + focusAlt + ")",
 		when: hasPane, run: func(a *app) { a.setFocus(!a.inTerm) }},
 	{label: diffKey, keys: []string{diffKey}, hint: "git diff",
-		help: "git diff of the session's project, sidebar too; s: side by side ↔ unified; ^D/^U: half page",
+		help: "git diff of the session's project, split under it, sidebar too; again closes it; s: side by side ↔ unified; ^D/^U: half page",
 		run:  (*app).openDiff},
 	{label: shellKey, keys: []string{shellKey}, hint: "shell",
 		help: "one shell for the app, started in the project's directory, split under the pane, sidebar too; again hides it",
 		run:  (*app).toggleShell},
+	{label: editorKey, keys: []string{editorKey}, hint: "editor",
+		help: "one editor for the app (editor.cmd in , settings), started in the project's directory, sidebar too; again hides it",
+		run:  (*app).toggleEditor},
+	// the editor keeps Ctrl+F (vim: page down)
 	{label: waitLbl, keys: []string{waitKey}, hint: "waiting", show: func(a *app) bool { return len(a.attn) > 0 },
-		help: "focus next waiting session (◆), oldest first, sidebar too", run: (*app).focusWaiting},
+		when: func(a *app) bool { return !a.inTerm || a.active != editorID },
+		help: "focus next waiting session (◆), oldest first, sidebar too; not in the editor", run: (*app).focusWaiting},
 	{label: "F4/^Z", keys: []string{zoomKey}, hint: "zoom",
 		help: "hide / show the sidebar (Ctrl+Z too, except in the shell), sidebar too", run: (*app).toggleZoom},
 	{keys: []string{zoomAlt}, when: func(a *app) bool { return a.active != shellID }, run: (*app).toggleZoom},
@@ -102,11 +109,11 @@ var paneKeys = []binding{
 	{label: "^⇧↑/^⇧↓", keys: []string{"Ctrl+Shift+Up"}, hint: "project", help: "go to sidebar, previous / next project, sidebar too",
 		run: toSidebar((*app).prevProject)},
 	{keys: []string{"Ctrl+Shift+Down"}, run: toSidebar((*app).nextProject)},
-	{label: "⌥↑/⌥↓", keys: []string{"Alt+Up"}, hint: "session/shell", show: (*app).split, when: (*app).split,
-		help: "with the shell split under the session: focus the session / the shell", run: func(a *app) { a.show(a.back) }},
-	{keys: []string{"Alt+Down"}, when: (*app).split, run: func(a *app) { a.show(shellID) }},
-	{label: fullKey, keys: []string{fullKey}, hint: "full shell", show: shellShown, when: shellShown,
-		help: "shell full height ↔ split under the session, remembered; split height in , settings", run: (*app).toggleShellFull},
+	{label: "⌥↑/⌥↓", keys: []string{"Alt+Up"}, hint: "split focus", show: (*app).split, when: (*app).split,
+		help: "with the diff or shell split under the session: focus the session / the diff or shell", run: (*app).focusUpper},
+	{keys: []string{"Alt+Down"}, when: (*app).split, run: (*app).focusLower},
+	{label: fullKey, keys: []string{fullKey}, hint: "full", show: (*app).lowerShown, when: (*app).lowerShown,
+		help: "diff or shell full height ↔ split under the session, remembered; split heights in , settings", run: (*app).toggleFull},
 	{label: "⇧PgUp/Dn", keys: []string{"Page_Up", "Shift+Page_Up"}, hint: "scroll", help: "scroll back / forward (PgUp/PgDn too)",
 		when: hasScrollback, run: func(a *app) { a.pageScroll(1) }},
 	{keys: []string{"Page_Down", "Shift+Page_Down"}, when: hasScrollback, run: func(a *app) { a.pageScroll(-1) }},
@@ -155,7 +162,7 @@ func (a *app) key(k vaxis.Key) bool {
 		}
 		return a.quit
 	}
-	if a.diff != nil {
+	if a.diffFocused() {
 		if !release {
 			a.diffKey(k)
 		}
@@ -166,7 +173,7 @@ func (a *app) key(k vaxis.Key) bool {
 		return false
 	}
 	// prompts and help keep Esc for cancel
-	if b := a.match(paneKeys[:11], k); b != nil && !paste && (a.inTerm || !a.help && a.input == nil && a.rename == nil && a.search == nil && a.set == nil) {
+	if b := a.match(paneKeys[:12], k); b != nil && !paste && (a.inTerm || !a.help && a.input == nil && a.rename == nil && a.search == nil && a.set == nil) {
 		if !release {
 			b.run(a)
 		}
@@ -268,6 +275,18 @@ func (a *app) pressD() {
 // mouse routes a mouse event to the pane scrollbar, the sidebar or the Claude pane.
 func (a *app) mouse(ev vaxis.Mouse) {
 	w, h := a.vx.Window().Size()
+	if ev.Button == vaxis.MouseLeftButton && (a.resizing || ev.EventType == vaxis.EventPress && a.sideShown() && ev.Col == a.sepX(w)) {
+		a.resizing = ev.EventType != vaxis.EventRelease
+		sw := ev.Col // the separator follows the pointer
+		if a.st.SidebarRight {
+			sw = w - ev.Col - 1
+		}
+		a.st.SidebarW = clampSide(sw, w)
+		if !a.resizing {
+			a.saveState()
+		}
+		return
+	}
 	p := a.paneTermAt(ev.Row, h)
 	t := a.terms[p.key]
 	drag := ev.Button == vaxis.MouseLeftButton && ev.EventType != vaxis.EventRelease
@@ -280,12 +299,9 @@ func (a *app) mouse(ev vaxis.Mouse) {
 	a.hover = noBar
 	x, end := a.paneSpan(w)
 	switch {
-	case a.diff != nil && ev.Col >= x && ev.Col < end: // the diff covers the pane
-		if ev.Button == vaxis.MouseWheelUp {
-			a.diff.pg.Offset = max(a.diff.pg.Offset-3, 0)
-		} else if ev.Button == vaxis.MouseWheelDown {
-			a.diff.pg.Offset += 3
-		}
+	case p.key == diffID && ev.Col >= x && ev.Col < end:
+		ev.Col, ev.Row = ev.Col-x, ev.Row-p.y
+		a.diffMouse(ev)
 	case t != nil && ev.Col >= end-barW && ev.Col < end: // pane scrollbar
 		a.hover = paneBar
 		if drag {
@@ -324,7 +340,7 @@ func (a *app) sidebarMouse(ev vaxis.Mouse, drag bool) {
 	}
 	rows := a.rows()
 	r := ev.Row - titleH
-	onBar := len(rows) > a.visible && ev.Col == sideW-1 && r >= 0 && r < a.visible
+	onBar := len(rows) > a.visible && ev.Col == a.sideW()-1 && r >= 0 && r < a.visible
 	if onBar {
 		a.hover = sideBar
 	}
@@ -352,7 +368,7 @@ func (a *app) sidebarMouse(ev vaxis.Mouse, drag bool) {
 func (a *app) paneMouse(t *term.Model, ev vaxis.Mouse) {
 	if ev.EventType == vaxis.EventPress {
 		a.selSeq++
-		if !a.inTerm {
+		if !a.inTerm && a.diff == nil { // a click beside the diff only selects
 			a.setFocus(true)
 		}
 	}
@@ -405,9 +421,11 @@ func (a *app) confirmKey(k vaxis.Key) {
 func (a *app) askQuit() {
 	var rows [][2]string
 	claude := len(a.terms)
-	if a.terms[shellID] != nil {
-		claude--
-		rows = append(rows, [2]string{"Shell", "running"})
+	for _, o := range [][2]string{{shellID, "Shell"}, {editorID, "Editor"}} {
+		if a.terms[o[0]] != nil {
+			claude--
+			rows = append(rows, [2]string{o[1], "running"})
+		}
 	}
 	if claude > 0 {
 		rows = append([][2]string{{"Claude", fmt.Sprintf("%d running", claude)}}, rows...)
@@ -416,10 +434,14 @@ func (a *app) askQuit() {
 		a.quit = true
 		return
 	}
+	note := "Closes them; Claude sessions stay on disk and can be resumed."
+	if a.terms[editorID] != nil {
+		note = "Closes them, the editor without saving; Claude sessions stay on disk and can be resumed."
+	}
 	a.confirm = &confirmation{
 		title: "QUIT CADE",
 		rows:  rows,
-		note:  "Closes them; Claude sessions stay on disk and can be resumed.",
+		note:  note,
 		yes:   func() { a.quit = true },
 	}
 }
@@ -672,8 +694,11 @@ const (
 	setTheme = iota
 	setHints
 	setSide
+	setSideW
 	setShell
+	setDiff
 	setQuit
+	setEditor
 	setEdit
 	settingRows
 )
@@ -681,6 +706,18 @@ const (
 // settingsKey drives the settings dialog; drawSettings renders it.
 func (a *app) settingsKey(k vaxis.Key) {
 	st := a.set
+	if st.typing {
+		switch {
+		case k.MatchString("Enter"):
+			st.typing = false
+			a.setEditorCmd(strings.TrimSpace(st.cmd))
+		case k.MatchString("Escape"):
+			st.typing = false
+		default:
+			typeKey(&st.cmd, k)
+		}
+		return
+	}
 	change := k.MatchString("Enter") || k.MatchString("space")
 	switch {
 	case k.MatchString("Escape"), k.MatchString(","), k.MatchString("q"):
@@ -699,11 +736,21 @@ func (a *app) settingsKey(k vaxis.Key) {
 		a.toggleHints()
 	case st.sel == setSide && (change || k.MatchString("Left") || k.MatchString("Right") || k.MatchString("h") || k.MatchString("l")):
 		a.toggleSide()
+	case st.sel == setSideW && (k.MatchString("Left") || k.MatchString("h")):
+		a.stepSide(-1)
+	case st.sel == setSideW && (change || k.MatchString("Right") || k.MatchString("l")):
+		a.stepSide(1)
 	case st.sel == setShell && (k.MatchString("Left") || k.MatchString("h")):
-		a.stepShellHeight(-1)
+		a.stepSplit(-1, &a.cfg.Shell.Height, "shell")
 	case st.sel == setShell && (change || k.MatchString("Right") || k.MatchString("l")):
-		a.stepShellHeight(1)
+		a.stepSplit(1, &a.cfg.Shell.Height, "shell")
+	case st.sel == setDiff && (k.MatchString("Left") || k.MatchString("h")):
+		a.stepSplit(-1, &a.cfg.Diff.Height, "diff")
+	case st.sel == setDiff && (change || k.MatchString("Right") || k.MatchString("l")):
+		a.stepSplit(1, &a.cfg.Diff.Height, "diff")
 	case st.sel == setQuit && (change || k.MatchString("Left") || k.MatchString("Right")):
 		a.toggleConfirmQuit()
+	case st.sel == setEditor && change:
+		st.typing, st.cmd = true, a.cfg.Editor.Cmd
 	}
 }

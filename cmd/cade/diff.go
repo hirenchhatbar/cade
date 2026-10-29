@@ -7,19 +7,24 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"go.rockorager.dev/vaxis"
 	"go.rockorager.dev/vaxis/widgets/pager"
 )
 
-// diffView is the F3 overlay: git diff of one project, drawn in place of the Claude pane.
+// diffView is the F3 diff of one project, split under the Claude pane or in its place.
 type diffView struct {
 	name, dir string
 	raw       string // git's output
 	laid      int    // pane width pg was laid out for; 0 = lay out again
 	pg        pager.Model
-	back      bool // focus was on the Claude pane when it opened
-	busy      bool // a git diff is running; refresh ticks skip until it is back
+	rows      []string // pg's rows as text, for selections
+	halves    [2][2]int
+	back      bool   // focus was on the Claude pane when it opened
+	focus     bool   // keys go to the diff, not to Claude
+	busy      bool   // a git diff is running; refresh ticks skip until it is back
+	from, to  [2]int // selection, row (of rows) and column; from == to is none
 }
 
 // diffEvent carries git's output for dir back to the event loop.
@@ -40,17 +45,28 @@ func (a *app) diffDir() *project {
 	return a.projects[a.current().p]
 }
 
+// openDiff shows the diff, focused, in place of the shell; when shown it closes it.
 func (a *app) openDiff() {
+	if a.diff != nil {
+		a.closeDiff()
+		return
+	}
+	if a.shellOn {
+		a.toggleShell()
+	}
 	p := a.diffDir()
-	a.diff = &diffView{name: p.Name, dir: p.Dir, back: a.inTerm}
+	a.diff = &diffView{name: p.Name, dir: p.Dir, back: a.inTerm, focus: true}
 	a.setFocus(false)
 	a.loadDiff()
 }
 
+// closeDiff gives the focus back to where it was when the diff opened, if the diff has it.
 func (a *app) closeDiff() {
-	back := a.diff.back
+	back, focus := a.diff.back, a.diff.focus
 	a.diff = nil
-	a.setFocus(back && hasPane(a))
+	if focus {
+		a.setFocus(back && hasPane(a))
+	}
 }
 
 // loadDiff runs git diff in the background; the result arrives as a diffEvent.
@@ -74,15 +90,111 @@ func (a *app) showDiff(ev diffEvent) {
 	}
 }
 
-// drawDiff lays the diff out again when it, the mode or the pane width changed, and draws it.
+// drawDiff lays the diff out again when it, the mode or the pane width changed,
+// and draws it with the selection.
 func (a *app) drawDiff(win vaxis.Window) {
 	d := a.diff
 	if w, _ := win.Size(); d.laid != w {
 		d.laid = w
-		d.pg.Segments = diffSegments(parseDiff(d.raw, !a.st.UnifiedDiff), w, a.cfg.Diff.Wrap == nil || *a.cfg.Diff.Wrap, a.th)
+		lines := parseDiff(d.raw, !a.st.UnifiedDiff)
+		d.pg.Segments = diffSegments(lines, w, a.cfg.Diff.Wrap == nil || *a.cfg.Diff.Wrap, a.th)
 		d.pg.Layout()
+		var b strings.Builder
+		for _, s := range d.pg.Segments {
+			b.WriteString(s.Text)
+		}
+		d.rows = strings.Split(b.String(), "\n")
+		d.halves = [2][2]int{}
+		if !a.st.UnifiedDiff {
+			d.halves = diffHalves(lines, w)
+		}
 	}
 	d.pg.Draw(win)
+	_, h := win.Size()
+	d.selected(func(r, lo, hi int) {
+		if r < d.pg.Offset || r >= d.pg.Offset+h {
+			return
+		}
+		col := 0
+		for _, c := range vaxis.Characters(d.rows[r]) {
+			if col >= lo && col < hi {
+				win.SetCell(col, r-d.pg.Offset, vaxis.Cell{Character: c, Style: a.th.sel})
+			}
+			col += c.Width
+		}
+	})
+}
+
+// selected calls f with each selected row and its columns lo to hi. Side by
+// side, the selection keeps to the text of the half it started in.
+func (d *diffView) selected(f func(r, lo, hi int)) {
+	from, to := d.from, d.to
+	if from == to {
+		return
+	}
+	if to[0] < from[0] || to[0] == from[0] && to[1] < from[1] {
+		from, to = to, from
+	}
+	clip := [2]int{0, math.MaxInt}
+	for _, h := range d.halves {
+		if h != [2]int{} && d.from[1] < h[1]+1 { // the separator counts to the left half
+			clip = h
+			break
+		}
+	}
+	for r := from[0]; r <= min(to[0], len(d.rows)-1); r++ {
+		lo, hi := 0, math.MaxInt
+		if r == from[0] {
+			lo = from[1]
+		}
+		if r == to[0] {
+			hi = to[1] + 1
+		}
+		if lo, hi = max(lo, clip[0]), min(hi, clip[1]); lo < hi {
+			f(r, lo, hi)
+		}
+	}
+}
+
+// selection is the selected text, one line per row.
+func (d *diffView) selection() string {
+	var lines []string
+	d.selected(func(r, lo, hi int) {
+		var b strings.Builder
+		col := 0
+		for _, c := range vaxis.Characters(d.rows[r]) {
+			if col >= lo && col < hi {
+				b.WriteString(c.Grapheme)
+			}
+			col += c.Width
+		}
+		lines = append(lines, b.String())
+	})
+	return strings.Join(lines, "\n")
+}
+
+// diffMouse scrolls the diff with the wheel and selects with a left drag,
+// copying on release like the Claude pane. row and col are within the diff.
+func (a *app) diffMouse(ev vaxis.Mouse) {
+	d := a.diff
+	pos := [2]int{min(max(d.pg.Offset+ev.Row, 0), max(len(d.rows)-1, 0)), max(ev.Col, 0)}
+	switch {
+	case ev.Button == vaxis.MouseWheelUp:
+		d.pg.Offset = max(d.pg.Offset-3, 0)
+	case ev.Button == vaxis.MouseWheelDown:
+		d.pg.Offset += 3
+	case ev.Button != vaxis.MouseLeftButton:
+	case ev.EventType == vaxis.EventPress:
+		a.selSeq++
+		d.from, d.to = pos, pos
+	case ev.EventType == vaxis.EventMotion:
+		d.to = pos
+	case ev.EventType == vaxis.EventRelease && d.from != d.to:
+		d.to = pos
+		a.vx.ClipboardPush(trimCopy(d.selection()))
+		clear := clearSel{nil, a.selSeq}
+		time.AfterFunc(selLinger, func() { a.vx.PostEvent(clear) })
+	}
 }
 
 // gitDiff returns git's diff of dir, or its error as text.
@@ -204,11 +316,7 @@ func diffSegments(lines []diffLine, w int, wrap bool, th theme) []vaxis.Segment 
 	style := map[diffKind]vaxis.Style{diffText: base, diffCtx: base, diffFile: file, diffHunk: muted, diffDel: fg(th.err), diffAdd: fg(th.running)}
 
 	w = max(w-1, 3)
-	numW := 1
-	for _, l := range lines {
-		numW = max(numW, len(strconv.Itoa(max(l.oldN, l.newN))))
-	}
-	colW := max((w-1)/2-numW-1, 1) // number, space, text on each side; │ between
+	numW, colW := diffCols(lines, w)
 	num := func(n int) string {
 		if n == 0 {
 			return strings.Repeat(" ", numW)
@@ -251,6 +359,25 @@ func diffSegments(lines []diffLine, w int, wrap bool, th theme) []vaxis.Segment 
 	return segs
 }
 
+// diffCols are the widths of the line numbers and of each side's text in rows
+// w columns wide: number, space, text on each side; │ between.
+func diffCols(lines []diffLine, w int) (numW, colW int) {
+	numW = 1
+	for _, l := range lines {
+		numW = max(numW, len(strconv.Itoa(max(l.oldN, l.newN))))
+	}
+	return numW, max((w-1)/2-numW-1, 1)
+}
+
+// diffHalves are the columns, first and after last, of the old and the new text
+// of side by side rows laid out by diffSegments for a pager w wide.
+func diffHalves(lines []diffLine, w int) [2][2]int {
+	numW, colW := diffCols(lines, max(w-1, 3))
+	left := numW + 1
+	right := left + colW + 1 + numW + 1
+	return [2][2]int{{left, left + colW}, {right, right + colW}}
+}
+
 // cut splits s into rows of exactly w columns, padded with spaces. With wrap off
 // it keeps the first row, ending in … when s was longer.
 func cut(s string, w int, wrap bool) []string {
@@ -288,15 +415,19 @@ func truncRow(chars []vaxis.Character, w int) string {
 	return b.String() + "…" + strings.Repeat(" ", max(w-1-used, 0))
 }
 
-// diffKey scrolls the overlay and s switches unified ↔ side by side; Esc or F3
-// closes it. Other keys are dropped, so nothing reaches Claude while the diff
-// covers it. pager.Draw clamps the offset.
+// diffKey scrolls the focused diff and s switches unified ↔ side by side; Esc
+// or F3 closes it, F11 and Alt+↑ work as in the pane. Other keys are dropped, so
+// nothing reaches Claude while the diff has focus. pager.Draw clamps the offset.
 func (a *app) diffKey(k vaxis.Key) {
 	pg := &a.diff.pg
 	page := func() int { _, h := a.paneSize(); return max(1, h-1) }
 	switch {
 	case k.MatchString("Escape"), k.MatchString(diffKey):
 		a.closeDiff()
+	case k.MatchString(fullKey):
+		a.toggleFull()
+	case k.MatchString("Alt+Up") && a.split():
+		a.focusUpper()
 	case k.MatchString(zoomKey), k.MatchString(zoomAlt):
 		a.toggleZoom()
 	case k.MatchString(quitKey):

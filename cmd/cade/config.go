@@ -27,7 +27,8 @@ type config struct {
 		Accounts map[string]account `yaml:"accounts"`
 	} `yaml:"claude"`
 	Diff struct {
-		Wrap *bool `yaml:"wrap"` // long lines wrap in the F3 diff; false cuts them with …. Default: true
+		Wrap   *bool `yaml:"wrap"`   // long lines wrap in the F3 diff; false cuts them with …. Default: true
+		Height int   `yaml:"height"` // like shell.height, for the diff
 	} `yaml:"diff"`
 	Toasts struct {
 		Position string `yaml:"position"` // corner, see toastPositions. Default: top-right
@@ -36,8 +37,11 @@ type config struct {
 		Confirm *bool `yaml:"confirm"` // ask before quitting while sessions run. Default: true
 	} `yaml:"quit"`
 	Shell struct {
-		Height int `yaml:"height"` // % of the pane the F2 shell takes under the session, see shellMin. Default: 50
+		Height int `yaml:"height"` // % of the pane the F2 shell takes under the session, see splitMin. Default: 50
 	} `yaml:"shell"`
+	Editor struct {
+		Cmd string `yaml:"cmd"` // F5 editor, run by sh in the project dir. Default: $VISUAL, else $EDITOR, else vi
+	} `yaml:"editor"`
 }
 
 // account is one Claude login: how claude is started and where it keeps sessions.
@@ -85,8 +89,13 @@ func parseConfig(path string) (cfg config, issues []string, err error) {
 	if p := cfg.Toasts.Position; p != "" && !slices.Contains(toastPositions, p) {
 		issues = append(issues, fmt.Sprintf("toasts.position: %q is not one of %s", p, strings.Join(toastPositions, ", ")))
 	}
-	if h := cfg.Shell.Height; h != 0 && (h < shellMin || h > shellMax) {
-		issues = append(issues, fmt.Sprintf("shell.height: %d is not between %d and %d", h, shellMin, shellMax))
+	for _, kh := range []struct {
+		key string
+		h   int
+	}{{"diff.height", cfg.Diff.Height}, {"shell.height", cfg.Shell.Height}} {
+		if key, h := kh.key, kh.h; h != 0 && (h < splitMin || h > splitMax) {
+			issues = append(issues, fmt.Sprintf("%s: %d is not between %d and %d", key, h, splitMin, splitMax))
+		}
 	}
 	return cfg, issues, nil
 }

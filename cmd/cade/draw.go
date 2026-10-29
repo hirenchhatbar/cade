@@ -3,7 +3,6 @@ package main
 import (
 	"cmp"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 
@@ -164,14 +163,9 @@ func (a *app) draw() {
 	w, h := win.Size()
 
 	if a.sideShown() {
-		x := a.sideX(w)
-		a.drawSidebar(win.New(x, 0, sideW, h))
-		sep := sideW
-		if a.st.SidebarRight {
-			sep = x - 1
-		}
+		a.drawSidebar(win.New(a.sideX(w), 0, a.sideW(), h))
 		for r := range h {
-			win.SetCell(sep, r, cell("│", a.th.muted))
+			win.SetCell(a.sepX(w), r, cell("│", a.th.muted))
 		}
 	}
 	a.drawPane(win, w, h)
@@ -188,11 +182,11 @@ func (a *app) draw() {
 func (a *app) sidebarHints() []string {
 	switch {
 	case a.search != nil:
-		return grid([][2]string{{"↑/↓", "pick"}, {"⏎", "open"}, {"Esc", "cancel"}}, sideW-1)
+		return grid([][2]string{{"↑/↓", "pick"}, {"⏎", "open"}, {"Esc", "cancel"}}, a.sideW()-1)
 	case a.inTerm:
-		return grid(a.hintPairs(paneKeys, false), sideW-1)
+		return grid(a.hintPairs(paneKeys, false), a.sideW()-1)
 	default:
-		return grid(a.hintPairs(sidebarKeys, a.st.HideHints), sideW-1)
+		return grid(a.hintPairs(sidebarKeys, a.st.HideHints), a.sideW()-1)
 	}
 }
 
@@ -201,7 +195,7 @@ func (a *app) drawSidebar(side vaxis.Window) {
 	side.Fill(cell(" ", th.base))
 	a.titleBar(side, " SESSIONS", "Cade v"+version+" ", !a.inTerm)
 	_, sh := side.Size()
-	tree := side.New(0, titleH, sideW, sh-titleH)
+	tree := side.New(0, titleH, a.sideW(), sh-titleH)
 	_, treeH := tree.Size()
 
 	hints := a.sidebarHints()
@@ -210,9 +204,9 @@ func (a *app) drawSidebar(side vaxis.Window) {
 	a.keepCursorVisible()
 	rows := a.rows()
 	overflow := len(rows) > a.visible
-	cw := sideW // row content width
+	cw := a.sideW() // row content width
 	if overflow {
-		cw = sideW - 1 // last column is the scrollbar
+		cw = a.sideW() - 1 // last column is the scrollbar
 	}
 	if a.search != nil {
 		a.drawSearch(tree)
@@ -223,11 +217,11 @@ func (a *app) drawSidebar(side vaxis.Window) {
 	}
 	if overflow && a.search == nil {
 		m := len(rows) - a.visible
-		a.scrollbar(tree, sideW-1, 1, 0, a.visible, m-a.top, m, !a.inTerm || a.hover == sideBar)
+		a.scrollbar(tree, a.sideW()-1, 1, 0, a.visible, m-a.top, m, !a.inTerm || a.hover == sideBar)
 	}
 
 	y := treeH - reserved
-	tree.PrintTruncate(y, vaxis.Segment{Text: " " + strings.Repeat("─", sideW-2), Style: th.muted})
+	tree.PrintTruncate(y, vaxis.Segment{Text: " " + strings.Repeat("─", a.sideW()-2), Style: th.muted})
 	for i, hint := range hints {
 		tree.PrintTruncate(y+1+i, append([]vaxis.Segment{{Text: " ", Style: th.muted}}, a.hintSegs(hint)...)...)
 	}
@@ -298,23 +292,12 @@ func (a *app) drawRow(win vaxis.Window, y int, r row, selected bool, cw int) {
 
 func (a *app) drawPane(win vaxis.Window, w, h int) {
 	x, end := a.paneSpan(w)
-	title := win.New(x, 0, end-x, titleH)
-	t := a.terms[a.active]
 	waiting := ""
 	if len(a.attn) > 0 {
 		waiting = fmt.Sprintf("◆ %d waiting ["+waitLbl+"] ", len(a.attn))
 	}
-	if a.diff != nil {
-		mode := "unified"
-		if a.st.UnifiedDiff {
-			mode = "side by side"
-		}
-		a.titleBar(title, " DIFF › "+a.diff.name, waiting+"[s] "+mode+"  [Esc] close ", true)
-		a.drawDiff(win.New(x, titleH, end-x, h-titleH))
-		return
-	}
-	if t == nil {
-		a.titleBar(title, " CLAUDE", waiting, false)
+	if a.diff == nil && a.terms[a.active] == nil {
+		a.titleBar(win.New(x, 0, end-x, titleH), " CLAUDE", waiting, false)
 		a.drawIdle(win.New(x, titleH, end-x, h-titleH))
 		return
 	}
@@ -324,13 +307,23 @@ func (a *app) drawPane(win vaxis.Window, w, h int) {
 		slices.Reverse(ps)
 	}
 	for _, p := range ps {
-		t := a.terms[p.key]
-		on := a.inTerm && p.key == a.active
 		right := ""
 		if p.y == titleH {
 			right = waiting
 		}
-		a.titleBar(win.New(x, p.y-titleH, end-x, titleH), " "+a.titleOf(p.key), right, on)
+		title := win.New(x, p.y-titleH, end-x, titleH)
+		if p.key == diffID {
+			mode := "unified"
+			if a.st.UnifiedDiff {
+				mode = "side by side"
+			}
+			a.titleBar(title, " DIFF › "+a.diff.name, right+"[s] "+mode+"  [Esc] close ", a.diff.focus)
+			a.drawDiff(win.New(x, p.y, end-x, p.h))
+			continue
+		}
+		t := a.terms[p.key]
+		on := a.inTerm && p.key == a.active
+		a.titleBar(title, " "+a.titleOf(p.key), right, on)
 		t.Resize(pw, p.h)
 		t.Draw(win.New(x, p.y, pw, p.h))
 		if off, m := t.ScrollInfo(); m > 0 {
@@ -602,7 +595,7 @@ func (a *app) drawSearch(win vaxis.Window) {
 	sr := a.search
 	win.PrintTruncate(0,
 		vaxis.Segment{Text: " / ", Style: th.key},
-		vaxis.Segment{Text: truncateLeft(sr.query, sideW-5), Style: th.base},
+		vaxis.Segment{Text: truncateLeft(sr.query, a.sideW()-5), Style: th.base},
 		vaxis.Segment{Text: "▏", Style: th.key})
 	hits := a.searchHits()
 	if len(hits) == 0 {
@@ -618,15 +611,15 @@ func (a *app) drawSearch(win vaxis.Window) {
 		if i == sel {
 			base, mark = th.sel, " › "
 		}
-		proj := truncate(a.projects[h.item.p].Name, sideW/3) + " "
-		title := truncate(a.projects[h.item.p].sessions[h.item.s].Title, sideW-runeLen(mark+proj)-2)
+		proj := truncate(a.projects[h.item.p].Name, a.sideW()/3) + " "
+		title := truncate(a.projects[h.item.p].sessions[h.item.s].Title, a.sideW()-runeLen(mark+proj)-2)
 		muted := th.muted
 		if i == sel {
 			muted = th.sel
 		}
 		segs := append([]vaxis.Segment{{Text: mark, Style: base}}, hitSegs(title, h.pos, base)...)
 		segs = append(segs,
-			vaxis.Segment{Text: pad("", sideW-runeLen(mark+title+proj)), Style: base},
+			vaxis.Segment{Text: pad("", a.sideW()-runeLen(mark+title+proj)), Style: base},
 			vaxis.Segment{Text: proj, Style: muted})
 		win.PrintTruncate(2+i-top, segs...)
 	}
@@ -636,6 +629,9 @@ func (a *app) drawSearch(win vaxis.Window) {
 func (a *app) titleOf(id string) string {
 	if id == shellID {
 		return "SHELL › " + a.short(a.shellDir)
+	}
+	if id == editorID {
+		return "EDITOR › " + a.short(a.editDir)
 	}
 	for _, p := range a.projects {
 		for _, s := range p.sessions {
@@ -685,14 +681,20 @@ func (a *app) drawSettings(win vaxis.Window) {
 	if a.confirmQuit() {
 		quit = "☑"
 	}
-	editor := cmp.Or(os.Getenv("VISUAL"), os.Getenv("EDITOR"), "vi")
+	editor := a.editorCmd()
+	if st.typing {
+		editor = st.cmd + "▏"
+	}
 	rows := [settingRows][2]string{
-		setTheme: {"Theme", "‹ " + cmp.Or(a.cfg.Theme, defaultTheme) + " ›"},
-		setHints: {"Hide hints", hints},
-		setSide:  {"Sidebar", side},
-		setShell: {"Shell height", fmt.Sprintf("‹ %d%% ›", a.shellHeight())},
-		setQuit:  {"Confirm quit", quit},
-		setEdit:  {"Edit config.yaml", "in " + editor + ", checked on save"},
+		setTheme:  {"Theme", "‹ " + cmp.Or(a.cfg.Theme, defaultTheme) + " ›"},
+		setHints:  {"Hide hints", hints},
+		setSide:   {"Sidebar", side},
+		setSideW:  {"Sidebar width", fmt.Sprintf("‹ %d ›", a.sideW())},
+		setShell:  {"Shell height", fmt.Sprintf("‹ %d%% ›", splitPct(a.cfg.Shell.Height))},
+		setDiff:   {"Diff height", fmt.Sprintf("‹ %d%% ›", splitPct(a.cfg.Diff.Height))},
+		setQuit:   {"Confirm quit", quit},
+		setEditor: {"Editor (" + editorKey + ")", editor},
+		setEdit:   {"Edit config.yaml", "in " + envEditor() + ", checked on save"},
 	}
 	for i, r := range rows {
 		base, label, mark := on(th.base), on(th.key), "   "
@@ -715,6 +717,9 @@ func (a *app) drawSettings(win vaxis.Window) {
 			box.PrintTruncate(y+1+i, vaxis.Segment{Text: "   " + truncate(is, bw-4), Style: on(th.base)})
 		}
 		hint = "[e] edit again  [Esc] keep old config"
+	}
+	if st.typing {
+		hint = "[⏎] save (empty = $VISUAL, else $EDITOR)  [Esc] cancel"
 	}
 	box.PrintTruncate(bh-1, append([]vaxis.Segment{{Text: " ", Style: th.muted}}, a.hintSegs(hint)...)...)
 }

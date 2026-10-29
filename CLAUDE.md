@@ -6,6 +6,7 @@
 @.claude/rules/make-docker.md
 @.claude/rules/docs.md
 @.claude/rules/settings-dialog.md
+@.claude/rules/cli.md
 
 ## Docs
 

@@ -215,6 +215,56 @@ func TestShellSplit(t *testing.T) {
 	}
 }
 
+// The diff splits under the session like the shell, with its own height and
+// F11; it takes the shell's place, and keys go to the side with focus.
+func TestDiffSplit(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}},
+		terms: map[string]*term.Model{"s1": term.New(), shellID: term.New()}, active: "s1", inTerm: true}
+	a.cfg.Diff.Height = 25
+	a.key(vaxis.Key{Keycode: vaxis.KeyF02})
+	a.diff = &diffView{dir: "/a", busy: true} // what F3 opens, without running git
+	a.shellOn = false
+	a.toggleShell() // F2 over the diff: the shell takes its place
+	if a.diff != nil || !a.shellOn {
+		t.Fatalf("F2: diff %v shellOn %v", a.diff, a.shellOn)
+	}
+	a.shellOn, a.active = false, "s1"
+	a.diff = &diffView{dir: "/a", busy: true, back: true, focus: true}
+	a.setFocus(false)
+	if ps := a.paneTerms(42); len(ps) != 2 || ps[0] != (paneTerm{"s1", 1, 30}) || ps[1] != (paneTerm{diffID, 32, 10}) {
+		t.Fatalf("split: %v", ps)
+	}
+	a.key(vaxis.Key{Keycode: 'j', Text: "j"})
+	if a.diff.pg.Offset != 1 {
+		t.Fatal("j should scroll the focused diff")
+	}
+	a.key(vaxis.Key{Keycode: vaxis.KeyUp, Modifiers: vaxis.ModAlt})
+	if a.diff.focus || !a.inTerm || a.diffFocused() {
+		t.Fatalf("Alt+Up: diff focus %v inTerm %v", a.diff.focus, a.inTerm)
+	}
+	a.key(vaxis.Key{Keycode: 'j', Text: "j"}) // to Claude now
+	if a.diff.pg.Offset != 1 {
+		t.Fatal("j reached the diff")
+	}
+	a.key(vaxis.Key{Keycode: vaxis.KeyDown, Modifiers: vaxis.ModAlt})
+	a.key(vaxis.Key{Keycode: vaxis.KeyF11})
+	if ps := a.paneTerms(42); !a.st.DiffFull || a.st.ShellFull || len(ps) != 1 || ps[0].key != diffID || !a.diff.focus {
+		t.Fatalf("F11: state %+v panes %v", a.st, ps)
+	}
+	a.key(vaxis.Key{Keycode: vaxis.KeyF11})
+	a.key(vaxis.Key{Keycode: vaxis.KeyUp, Modifiers: vaxis.ModAlt})
+	a.key(vaxis.Key{Keycode: vaxis.KeyF03}) // from the session: closes it, focus stays
+	if a.diff != nil || !a.inTerm || a.active != "s1" {
+		t.Fatalf("F3: diff %v inTerm %v", a.diff, a.inTerm)
+	}
+	a.closeTerm("s1")
+	a.diff = &diffView{dir: "/a", busy: true, focus: true} // no session: the diff fills the pane
+	if ps := a.paneTerms(42); len(ps) != 1 || ps[0].key != diffID {
+		t.Fatalf("no session: %v", ps)
+	}
+}
+
 // Pasted text in the sidebar must not run shortcuts, e.g. q quitting.
 func TestPasteIsNotShortcut(t *testing.T) {
 	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}}}
@@ -243,12 +293,29 @@ func TestTrimCopy(t *testing.T) {
 // The sidebar on the right puts the pane at column 0, ending before the separator.
 func TestSidebarRight(t *testing.T) {
 	a := &app{st: state{SidebarRight: true}}
-	if x, end := a.paneSpan(100); x != 0 || end != 100-sideW-1 || a.sideX(100) != 100-sideW {
+	if x, end := a.paneSpan(100); x != 0 || end != 100-sideDef-1 || a.sideX(100) != 100-sideDef {
 		t.Fatalf("pane %d..%d, sidebar at %d", x, end, a.sideX(100))
 	}
 	a.zoom, a.inTerm = true, true
 	if x, end := a.paneSpan(100); x != 0 || end != 100 {
 		t.Fatalf("zoomed pane %d..%d", x, end)
+	}
+}
+
+// A remembered sidebar width moves the pane; widths stay between sideMin and a sideMin-wide pane.
+func TestSidebarWidth(t *testing.T) {
+	a := &app{st: state{SidebarW: 50}}
+	if x, _ := a.paneSpan(100); x != 51 || a.sepX(100) != 50 {
+		t.Fatalf("pane at %d, separator at %d", x, a.sepX(100))
+	}
+	a.st.SidebarRight = true
+	if _, end := a.paneSpan(100); end != 49 || a.sepX(100) != 49 || a.sideX(100) != 50 {
+		t.Fatalf("right: pane end %d, separator at %d, sidebar at %d", end, a.sepX(100), a.sideX(100))
+	}
+	for _, c := range [][3]int{{10, 100, sideMin}, {50, 100, 50}, {90, 100, 100 - sideMin - 1}} {
+		if got := clampSide(c[0], c[1]); got != c[2] {
+			t.Errorf("clampSide(%d, %d) = %d, want %d", c[0], c[1], got, c[2])
+		}
 	}
 }
 
@@ -261,13 +328,13 @@ func TestZoom(t *testing.T) {
 		t.Fatalf("F4: zoom %v inTerm %v x %d", a.zoom, a.inTerm, x)
 	}
 	a.key(vaxis.Key{Keycode: vaxis.KeyF12}) // to the sidebar: it shows again
-	if x, _ := a.paneSpan(100); !a.zoom || x != sideW+1 {
+	if x, _ := a.paneSpan(100); !a.zoom || x != sideDef+1 {
 		t.Fatalf("sidebar focus: zoom %v x %d", a.zoom, x)
 	}
 	a.key(vaxis.Key{Keycode: vaxis.KeyF12})
 	ctrlZ := vaxis.Key{Keycode: 'z', Modifiers: vaxis.ModCtrl}
 	a.key(ctrlZ)
-	if x, _ := a.paneSpan(100); a.zoom || x != sideW+1 {
+	if x, _ := a.paneSpan(100); a.zoom || x != sideDef+1 {
 		t.Fatal("Ctrl+Z should unzoom")
 	}
 	a.active = shellID
@@ -320,5 +387,69 @@ func TestQuitAsks(t *testing.T) {
 	a.cfg.Quit.Confirm = &no
 	if !a.key(q) {
 		t.Fatal("quit.confirm false: should quit at once")
+	}
+}
+
+// F5 puts the app's editor in the pane and F5 again goes back; the editor keeps
+// Ctrl+F, and when it exits the pane returns to the session.
+func TestEditorToggle(t *testing.T) {
+	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}},
+		terms: map[string]*term.Model{"s1": term.New(), editorID: term.New()}, active: "s1", inTerm: true,
+		attn: []string{"s1"}}
+	f5 := vaxis.Key{Keycode: vaxis.KeyF05}
+	a.key(f5)
+	if a.active != editorID || !a.inTerm {
+		t.Fatalf("F5: active %q inTerm %v", a.active, a.inTerm)
+	}
+	a.attn = []string{"s1"}
+	a.key(vaxis.Key{Keycode: 'f', Modifiers: vaxis.ModCtrl})
+	if a.active != editorID {
+		t.Fatalf("Ctrl+F in the editor should go to it, active %q", a.active)
+	}
+	a.key(f5)
+	if a.active != "s1" {
+		t.Fatalf("F5 again: active %q", a.active)
+	}
+	// F2 over the editor splits the shell under it; F5 hides both
+	a.terms[shellID] = term.New()
+	a.key(f5)
+	a.key(vaxis.Key{Keycode: vaxis.KeyF02})
+	if ps := a.paneTerms(42); len(ps) != 2 || ps[0].key != editorID || ps[1].key != shellID {
+		t.Fatalf("shell under editor: %v", ps)
+	}
+	a.key(f5)
+	if a.active != "s1" || a.shellOn {
+		t.Fatalf("F5 from the shell: active %q shellOn %v", a.active, a.shellOn)
+	}
+	a.key(f5)
+	a.closeTerm(editorID) // the editor quit
+	if a.active != "s1" {
+		t.Fatalf("editor closed: active %q", a.active)
+	}
+}
+
+// The settings row edits editor.cmd as text; Esc keeps the old value.
+func TestEditorSetting(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("VISUAL", "vim")
+	a := &app{set: &settings{sel: setEditor}}
+	if a.editorCmd() != "vim" {
+		t.Fatalf("default: %q", a.editorCmd())
+	}
+	a.settingsKey(vaxis.Key{Keycode: vaxis.KeyEnter})
+	for _, r := range "nvim ." {
+		a.settingsKey(vaxis.Key{Keycode: r, Text: string(r)})
+	}
+	a.settingsKey(vaxis.Key{Keycode: 'q', Text: "q"}) // typed, not close
+	a.settingsKey(vaxis.Key{Keycode: vaxis.KeyBackspace})
+	a.settingsKey(vaxis.Key{Keycode: vaxis.KeyEnter})
+	if cfg, _, _ := parseConfig(configPath()); a.set == nil || cfg.Editor.Cmd != "nvim ." || a.editorCmd() != "nvim ." {
+		t.Fatalf("saved %q, in use %q", cfg.Editor.Cmd, a.editorCmd())
+	}
+	a.settingsKey(vaxis.Key{Keycode: vaxis.KeyEnter})
+	a.settingsKey(vaxis.Key{Keycode: 'x', Text: "x"})
+	a.settingsKey(vaxis.Key{Keycode: vaxis.KeyEsc})
+	if a.set == nil || a.set.typing || a.editorCmd() != "nvim ." {
+		t.Fatalf("Esc: set %v cmd %q", a.set, a.editorCmd())
 	}
 }

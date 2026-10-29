@@ -79,7 +79,7 @@ func TestCut(t *testing.T) {
 func TestDiffKeys(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}}}
-	a.diff = &diffView{dir: "/a", busy: true, laid: 80}
+	a.diff = &diffView{dir: "/a", busy: true, laid: 80, focus: true}
 	a.key(vaxis.Key{Keycode: 'j', Text: "j"})
 	a.key(vaxis.Key{Keycode: 'j', Text: "j"})
 	a.key(vaxis.Key{Keycode: 'q', Text: "q"})
@@ -101,5 +101,24 @@ func TestDiffKeys(t *testing.T) {
 	a.key(vaxis.Key{Keycode: vaxis.KeyEsc})
 	if a.diff != nil || a.inTerm {
 		t.Fatalf("Esc: diff %v inTerm %v", a.diff, a.inTerm)
+	}
+}
+
+// A drag side by side copies only the text of the half it started in.
+func TestDiffSelection(t *testing.T) {
+	lines := parseDiff(sampleDiff, true)
+	d := &diffView{rows: text(diffSegments(lines, 41, true, theme{})), halves: diffHalves(lines, 41)}
+	d.from, d.to = [2]int{3, 0}, [2]int{5, 40} // from the left numbers to past the right half
+	if got := trimCopy(d.selection()); got != "b := 2\nc := 3\nd := 4" {
+		t.Fatalf("left half: %q", got)
+	}
+	d.from, d.to = [2]int{3, 27}, [2]int{3, 29} // right half, backwards drag
+	if d.to, d.from = d.from, d.to; d.selection() != "b :" {
+		t.Fatalf("right half: %q", d.selection())
+	}
+	d.halves = [2][2]int{} // unified: whole rows
+	d.from, d.to = [2]int{0, 5}, [2]int{1, 1}
+	if got := d.selection(); got != "--git a/f.go b/f.go\n@@" {
+		t.Fatalf("unified: %q", got)
 	}
 }

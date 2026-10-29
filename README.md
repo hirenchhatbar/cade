@@ -73,7 +73,8 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `d/dd` | d: delete session from disk · dd: remove project from list (both ask) |
 | `g/G` | top / end |
 | `⇥` | go to Claude pane |
-| `,` | settings: theme, hints, sidebar side, shell height, edit config.yaml in $EDITOR |
+| `-/+` | narrower / wider sidebar (or drag the line beside it), remembered |
+| `,` | settings: theme, hints, sidebar side and width, shell and diff height, editor, edit config.yaml in $EDITOR |
 | `?` | this help |
 | `q` | quit (asks while sessions run) |
 | `H` | show / hide these hints |
@@ -83,15 +84,16 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | Key | Action |
 |---|---|
 | `Ctrl+Esc` | switch sidebar ↔ pane (also F12) |
-| `F3` | git diff of the session's project, sidebar too; s: side by side ↔ unified |
+| `F3` | git diff of the session's project, split under it, sidebar too; again closes it; s: side by side ↔ unified |
 | `F2` | one shell for the app, started in the project's directory, split under the pane, sidebar too; again hides it |
-| `Ctrl+F` | focus next waiting session (◆), oldest first, sidebar too |
+| `F5` | one editor for the app (editor.cmd in , settings), started in the project's directory, sidebar too; again hides it |
+| `Ctrl+F` | focus next waiting session (◆), oldest first, sidebar too; not in the editor |
 | `F4/^Z` | hide / show the sidebar (Ctrl+Z too, except in the shell), sidebar too |
 | `Ctrl+⇧Q` | quit cade, sidebar too (asks while sessions run) |
 | `^↑/^↓` | go to sidebar, cursor up / down, sidebar too |
 | `^⇧↑/^⇧↓` | go to sidebar, previous / next project, sidebar too |
-| `⌥↑/⌥↓` | with the shell split under the session: focus the session / the shell |
-| `F11` | shell full height ↔ split under the session, remembered; split height in , settings |
+| `⌥↑/⌥↓` | with the diff or shell split under the session: focus the session / the diff or shell |
+| `F11` | diff or shell full height ↔ split under the session, remembered; split heights in , settings |
 | `⇧PgUp/Dn` | scroll back / forward (PgUp/PgDn too) |
 | `wheel` | scroll; or drag the scrollbar |
 | `drag` | select text, 2×click word, 3×click line → copied |
@@ -118,8 +120,8 @@ All files live in `~/.config/cade/` (`$XDG_CONFIG_HOME/cade/` if set; on macOS
 | File | Written by | Contents |
 |---|---|---|
 | `projects.json` | cade | projects, their order and collapsed state, session titles and stars |
-| `state.json` | cade | remembered UI state (hints hidden, sidebar left or right, diff side by side or unified, shell full or split) |
-| `config.yaml` | you (cade writes only `theme`, `quit.confirm` and `shell.height`) | theme, diff, toasts, quit, shell, Claude accounts |
+| `state.json` | cade | remembered UI state (hints hidden, sidebar left or right and its width, diff side by side or unified, diff and shell full or split) |
+| `config.yaml` | you (cade writes only `theme`, `quit.confirm`, `shell.height`, `diff.height` and `editor.cmd`) | theme, diff, toasts, quit, shell, editor, Claude accounts |
 
 ### Themes
 
@@ -145,13 +147,19 @@ a toast. The config is read at startup.
 
 ### Diff
 
-`F3` shows `git diff` of the session's project over the Claude pane, side by side; `s` switches to
-unified and back, and cade remembers the choice. It reloads every 2 seconds and keeps your scroll
-position. Long lines wrap inside their column; to cut them with `…` instead:
+`F3` shows `git diff` of the session's project split under the session, like the `F2` shell, in its
+place: `F3` hides the shell and `F2` the diff. Keys scroll the diff while it has focus; `⌥↑/⌥↓`
+move the focus to the session and back, `F11` makes the diff full height and back (remembered on
+its own), and a drag selects and copies, side by side only from the half it started in. With no
+session open, the diff fills the pane. It is side by side; `s` switches to unified and back, and
+cade remembers the choice. It reloads every 2 seconds and keeps the scroll position. Long lines
+wrap inside their column; to cut them with `…` instead, or to set its height (50% by default,
+from 10 to 90):
 
 ```yaml
 diff:
   wrap: false
+  height: 40
 ```
 
 ### Toasts
@@ -188,13 +196,29 @@ shell:
   height: 40
 ```
 
+### Editor
+`F5` runs one editor for the app in the pane, started in the cursor's project directory; `F5` again
+hides it, still running, back to the pane before. `F2` over it splits the shell under the editor.
+The command runs through `sh`, so flags work; the default is `$VISUAL`, else `$EDITOR`, else `vi`:
+
+```yaml
+editor:
+  cmd: nvim .
+```
+
+Keys go to the editor except cade's own (`Ctrl+Esc`, `F2`–`F5`, `F11`, `F12`, `Ctrl+Z`,
+`Ctrl+⇧Q`, `^↑/^↓`, `^⇧↑/^⇧↓`); `Ctrl+F` stays with the editor. Quitting cade closes
+the editor without saving.
+
 ### Settings dialog
 
 `,` opens settings. Picking a theme applies at once and writes the `theme` key to `config.yaml`;
 the rest of the file, comments included, is kept (indentation is normalised to two spaces).
 "Confirm quit" switches `quit.confirm`, written to `config.yaml` the same way.
 "Sidebar" puts the sessions sidebar on the left (default) or right; it is saved in `state.json`.
-"Shell height" steps `shell.height` by 10%, written to `config.yaml` the same way.
+"Sidebar width" steps the sidebar width by 2 columns (default 42, at least 30, leaving the pane at least 30); `-`/`+` in the sidebar and dragging the line between sidebar and pane do the same. It is saved in `state.json`.
+"Shell height" and "Diff height" step `shell.height` and `diff.height` by 10%, written to `config.yaml` the same way.
+"Editor (F5)" edits `editor.cmd` as text: `⏎` saves it to `config.yaml` the same way (empty = `$VISUAL`, else `$EDITOR`), `Esc` cancels; a running editor keeps its old command.
 "Edit config.yaml" suspends cade and opens the file in `$VISUAL`, else `$EDITOR`, else `vi`. On
 save cade checks the file: a clean one takes effect at once (account changes apply to sessions
 started after it), otherwise the dialog lists the issues and the config from before the edit stays
