@@ -67,12 +67,13 @@ func saveProjects(path string, ps []*project) error { return writeJSON(path, ps)
 // state is UI state cade remembers between runs (kept apart from the
 // hand-edited config.yaml, which cade only writes from the settings dialog).
 type state struct {
-	HideHints    bool `json:"hideHints"`
-	UnifiedDiff  bool `json:"unifiedDiff"`  // F3 overlay; side by side otherwise
-	SidebarRight bool `json:"sidebarRight"` // left otherwise
-	SidebarW     int  `json:"sidebarWidth"` // columns; 0 = sideDef
-	ShellFull    bool `json:"shellFull"`    // F11: shell fills the pane; split under the session otherwise
-	DiffFull     bool `json:"diffFull"`     // F11 in the diff, like ShellFull
+	HideHints    bool     `json:"hideHints"`
+	UnifiedDiff  bool     `json:"unifiedDiff"`      // F3 overlay; side by side otherwise
+	SidebarRight bool     `json:"sidebarRight"`     // left otherwise
+	SidebarW     int      `json:"sidebarWidth"`     // columns; 0 = sideDef
+	ShellFull    bool     `json:"shellFull"`        // F11: shell fills the pane; split under the session otherwise
+	DiffFull     bool     `json:"diffFull"`         // F11 in the diff, like ShellFull
+	Recent       []string `json:"recent,omitempty"` // opened session IDs, latest first; the first gets the cursor at startup
 }
 
 func statePath() string { return filepath.Join(filepath.Dir(projectsPath()), "state.json") }

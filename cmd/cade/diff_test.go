@@ -95,7 +95,7 @@ func TestDiffKeys(t *testing.T) {
 		t.Fatalf("refresh: %+v", a.diff)
 	}
 	a.key(vaxis.Key{Keycode: 's', Text: "s"})
-	if !a.st.UnifiedDiff || loadState(statePath()) != a.st {
+	if !a.st.UnifiedDiff || !loadState(statePath()).UnifiedDiff {
 		t.Fatalf("s: state %+v saved %+v", a.st, loadState(statePath()))
 	}
 	a.key(vaxis.Key{Keycode: vaxis.KeyEsc})

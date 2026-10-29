@@ -82,7 +82,7 @@ var sidebarKeys = []binding{
 }
 
 // paneKeys apply while the Claude pane has focus; everything else goes to Claude.
-// The keys up to the scroll keys (paneKeys[:12]) are checked first, in any focus state.
+// The keys up to the scroll keys (paneKeys[:14]) are checked first, in any focus state.
 var paneKeys = []binding{
 	{label: focusLbl, keys: []string{focusKey, focusAlt}, hint: "sidebar", help: "switch sidebar ↔ pane (also " + focusAlt + ")",
 		when: hasPane, run: func(a *app) { a.setFocus(!a.inTerm) }},
@@ -99,6 +99,10 @@ var paneKeys = []binding{
 	{label: waitLbl, keys: []string{waitKey}, hint: "waiting", show: func(a *app) bool { return len(a.attn) > 0 },
 		when: func(a *app) bool { return !a.inTerm || a.active != editorID },
 		help: "focus next waiting session (◆), oldest first, sidebar too; not in the editor", run: (*app).focusWaiting},
+	{label: "^⇥/^⇧⇥", keys: []string{"Ctrl+Tab"}, hint: "recent",
+		help: "previous / next session in the history of opened sessions, kept across restarts, sidebar too",
+		run:  func(a *app) { a.stepRecent(1) }},
+	{keys: []string{"Ctrl+Shift+Tab"}, run: func(a *app) { a.stepRecent(-1) }},
 	{label: "F4/^Z", keys: []string{zoomKey}, hint: "zoom",
 		help: "hide / show the sidebar (Ctrl+Z too, except in the shell), sidebar too", run: (*app).toggleZoom},
 	{keys: []string{zoomAlt}, when: func(a *app) bool { return a.active != shellID }, run: (*app).toggleZoom},
@@ -173,7 +177,7 @@ func (a *app) key(k vaxis.Key) bool {
 		return false
 	}
 	// prompts and help keep Esc for cancel
-	if b := a.match(paneKeys[:12], k); b != nil && !paste && (a.inTerm || !a.help && a.input == nil && a.rename == nil && a.search == nil && a.set == nil) {
+	if b := a.match(paneKeys[:14], k); b != nil && !paste && (a.inTerm || !a.help && a.input == nil && a.rename == nil && a.search == nil && a.set == nil) {
 		if !release {
 			b.run(a)
 		}

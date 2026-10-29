@@ -17,7 +17,7 @@ import (
 
 const (
 	appName  = "cade"
-	version  = "0.1.5"
+	version  = "0.1.6"
 	appLabel = appName + " v" + version
 	sideDef  = 42            // sidebar width until resized; state.json keeps the resized one
 	sideMin  = 30            // narrowest sidebar, and narrowest pane beside it
@@ -34,6 +34,7 @@ const (
 	zoomAlt   = "Ctrl+z" // Claude's own Ctrl+Z (suspend) only freezes the pane; the shell keeps it for job control
 	waitKey   = "Ctrl+f"
 	waitLbl   = "Ctrl+F"
+	recentMax = 50             // sessions kept in state.json's history
 	quitKey   = "Ctrl+Shift+q" // needs the kitty keyboard protocol, like Ctrl+Esc; sidebar q always works
 	quitLbl   = "Ctrl+⇧Q"
 	shellID   = "shell"  // the one app-wide shell in terms
@@ -134,6 +135,8 @@ type app struct {
 	inTerm   bool     // keyboard focus on the Claude pane
 	zoom     bool     // sidebar hidden while the pane or diff has focus; not remembered
 	attn     []string // sessions that rang for attention, oldest first
+	trail    []string // st.Recent as it was when Ctrl+Tab stepping began; nil when not stepping
+	trailAt  int      // position in trail
 
 	// transient UI state
 	input    *prompt       // non-nil while adding a project
@@ -202,6 +205,11 @@ func main() {
 	a.refresh()
 	if i := slices.IndexFunc(a.rows(), func(r row) bool { return r.s == rowHeader && a.projects[r.p].Dir == cwd }); i >= 0 {
 		a.cursor = i
+	}
+	for _, id := range a.st.Recent { // the last session still listed wins over cwd's project
+		if a.cursorTo(id) {
+			break
+		}
 	}
 	go func() {
 		for range time.Tick(2 * time.Second) {
@@ -399,6 +407,7 @@ func (a *app) open() {
 		}
 		a.terms[key] = t
 	}
+	a.visit(key)
 	a.show(key)
 }
 
@@ -745,18 +754,57 @@ func (a *app) clearAttn(id string) {
 // focusWaiting opens the session that has waited longest.
 func (a *app) focusWaiting() {
 	for len(a.attn) > 0 {
-		id := a.attn[0]
-		for pi, p := range a.projects {
-			if si := slices.IndexFunc(p.sessions, func(s session) bool { return s.ID == id }); si >= 0 {
-				p.Collapsed = false
-				a.cursor = slices.Index(a.rows(), row{pi, si})
-				a.open()
-				return
-			}
+		if a.cursorTo(a.attn[0]) {
+			a.open()
+			return
 		}
-		a.clearAttn(id) // session gone from disk and list
+		a.clearAttn(a.attn[0]) // session gone from disk and list
 	}
 	a.notify(toastNotice, "No session waiting")
+}
+
+// cursorTo puts the cursor on session id, expanding its project; it reports
+// whether the session is listed.
+func (a *app) cursorTo(id string) bool {
+	for pi, p := range a.projects {
+		if si := slices.IndexFunc(p.sessions, func(s session) bool { return s.ID == id }); si >= 0 {
+			p.Collapsed = false
+			a.cursor = slices.Index(a.rows(), row{pi, si})
+			return true
+		}
+	}
+	return false
+}
+
+// visit moves session id to the front of the remembered history and ends any
+// Ctrl+Tab stepping; stepRecent restores its trail after opening.
+func (a *app) visit(id string) {
+	r := slices.DeleteFunc(a.st.Recent, func(s string) bool { return s == id })
+	a.st.Recent = slices.Insert(r, 0, id)[:min(len(r)+1, recentMax)]
+	a.trail = nil
+	a.saveState()
+}
+
+// stepRecent opens the next older (dir 1) or newer (dir -1) session in the
+// history as it was when stepping began, skipping sessions no longer listed.
+func (a *app) stepRecent(dir int) {
+	trail, at := a.trail, a.trailAt
+	if trail == nil {
+		trail, at = slices.Clone(a.st.Recent), slices.Index(a.st.Recent, a.active)
+	}
+	for i := at + dir; i >= 0 && i < len(trail); i += dir {
+		if a.cursorTo(trail[i]) {
+			a.open()
+			a.trail, a.trailAt = trail, i
+			return
+		}
+	}
+	a.trail, a.trailAt = trail, at
+	if dir > 0 {
+		a.notify(toastNotice, "No older session")
+	} else {
+		a.notify(toastNotice, "No newer session")
+	}
 }
 
 // editConfig runs $EDITOR on config.yaml with cade suspended, then checks the

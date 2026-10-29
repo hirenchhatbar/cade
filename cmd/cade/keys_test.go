@@ -472,3 +472,33 @@ func TestShowTitle(t *testing.T) {
 	a.rename = nil
 	a.showTitle(titleEvent{id: "a", title: "late"}) // dialog closed: no panic
 }
+
+// Opening sessions builds the history in state.json; Ctrl+Tab and Ctrl+Shift+Tab
+// step through it without reordering it, skipping sessions no longer listed.
+func TestRecentSessions(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := &app{tree: tree{projects: []*project{
+		{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}, {ID: "s2"}}},
+		{Name: "b", Dir: "/b", Collapsed: true, sessions: []session{{ID: "s3"}}},
+	}}, terms: map[string]*term.Model{"s1": term.New(), "s2": term.New(), "s3": term.New()}}
+	for _, id := range []string{"s1", "gone", "s3", "s2"} {
+		a.visit(id)
+	}
+	a.show("s2")
+	ctrlTab := vaxis.Key{Keycode: vaxis.KeyTab, Modifiers: vaxis.ModCtrl}
+	a.key(ctrlTab)
+	if a.active != "s3" || a.projects[1].Collapsed {
+		t.Fatalf("Ctrl+Tab: active %q", a.active)
+	}
+	a.key(ctrlTab) // skips "gone"
+	if a.active != "s1" {
+		t.Fatalf("Ctrl+Tab again: active %q", a.active)
+	}
+	a.key(vaxis.Key{Keycode: vaxis.KeyTab, Modifiers: vaxis.ModCtrl | vaxis.ModShift})
+	if a.active != "s3" {
+		t.Fatalf("Ctrl+Shift+Tab: active %q", a.active)
+	}
+	if got := strings.Join(loadState(statePath()).Recent, " "); got != "s3 s1 s2 gone" {
+		t.Fatalf("saved history %q", got)
+	}
+}

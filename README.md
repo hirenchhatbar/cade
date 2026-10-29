@@ -88,6 +88,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `F2` | one shell for the app, started in the project's directory, split under the pane, sidebar too; again hides it |
 | `F5` | one editor for the app (editor.cmd in , settings), started in the project's directory, sidebar too; again hides it |
 | `Ctrl+F` | focus next waiting session (◆), oldest first, sidebar too; not in the editor |
+| `^⇥/^⇧⇥` | previous / next session in the history of opened sessions, kept across restarts, sidebar too |
 | `F4/^Z` | hide / show the sidebar (Ctrl+Z too, except in the shell), sidebar too |
 | `Ctrl+⇧Q` | quit cade, sidebar too (asks while sessions run) |
 | `^↑/^↓` | go to sidebar, cursor up / down, sidebar too |
@@ -120,7 +121,7 @@ All files live in `~/.config/cade/` (`$XDG_CONFIG_HOME/cade/` if set; on macOS
 | File | Written by | Contents |
 |---|---|---|
 | `projects.json` | cade | projects, their order and collapsed state, session titles and stars |
-| `state.json` | cade | remembered UI state (hints hidden, sidebar left or right and its width, diff side by side or unified, diff and shell full or split) |
+| `state.json` | cade | remembered UI state (hints hidden, sidebar left or right and its width, diff side by side or unified, diff and shell full or split, opened sessions latest first: cursor starts on last one) |
 | `config.yaml` | you (cade writes only `theme`, `quit.confirm`, `shell.height`, `diff.height` and `editor.cmd`) | theme, diff, toasts, quit, shell, editor, Claude accounts |
 
 ### Themes
