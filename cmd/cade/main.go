@@ -17,7 +17,7 @@ import (
 
 const (
 	appName  = "cade"
-	version  = "0.1.6"
+	version  = "0.1.8"
 	appLabel = appName + " v" + version
 	sideDef  = 42            // sidebar width until resized; state.json keeps the resized one
 	sideMin  = 30            // narrowest sidebar, and narrowest pane beside it
@@ -135,8 +135,6 @@ type app struct {
 	inTerm   bool     // keyboard focus on the Claude pane
 	zoom     bool     // sidebar hidden while the pane or diff has focus; not remembered
 	attn     []string // sessions that rang for attention, oldest first
-	trail    []string // st.Recent as it was when Ctrl+Tab stepping began; nil when not stepping
-	trailAt  int      // position in trail
 
 	// transient UI state
 	input    *prompt       // non-nil while adding a project
@@ -776,35 +774,27 @@ func (a *app) cursorTo(id string) bool {
 	return false
 }
 
-// visit moves session id to the front of the remembered history and ends any
-// Ctrl+Tab stepping; stepRecent restores its trail after opening.
+// visit moves session id to the front of the remembered history.
 func (a *app) visit(id string) {
 	r := slices.DeleteFunc(a.st.Recent, func(s string) bool { return s == id })
 	a.st.Recent = slices.Insert(r, 0, id)[:min(len(r)+1, recentMax)]
-	a.trail = nil
 	a.saveState()
 }
 
-// stepRecent opens the next older (dir 1) or newer (dir -1) session in the
-// history as it was when stepping began, skipping sessions no longer listed.
-func (a *app) stepRecent(dir int) {
-	trail, at := a.trail, a.trailAt
-	if trail == nil {
-		trail, at = slices.Clone(a.st.Recent), slices.Index(a.st.Recent, a.active)
+// stepRecent moves the cursor to the session opened before the one under it,
+// wrapping from the oldest to the latest and skipping sessions no longer listed;
+// off the history it goes to the latest.
+func (a *app) stepRecent() {
+	at := -1
+	if r := a.current(); r.s >= 0 {
+		at = slices.Index(a.st.Recent, a.projects[r.p].sessions[r.s].ID)
 	}
-	for i := at + dir; i >= 0 && i < len(trail); i += dir {
-		if a.cursorTo(trail[i]) {
-			a.open()
-			a.trail, a.trailAt = trail, i
+	for n := 1; n <= len(a.st.Recent); n++ {
+		if i := (at + n) % len(a.st.Recent); i != at && a.cursorTo(a.st.Recent[i]) {
 			return
 		}
 	}
-	a.trail, a.trailAt = trail, at
-	if dir > 0 {
-		a.notify(toastNotice, "No older session")
-	} else {
-		a.notify(toastNotice, "No newer session")
-	}
+	a.notify(toastNotice, "No other session")
 }
 
 // editConfig runs $EDITOR on config.yaml with cade suspended, then checks the
