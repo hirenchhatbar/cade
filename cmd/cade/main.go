@@ -17,7 +17,7 @@ import (
 
 const (
 	appName  = "cade"
-	version  = "0.1.3"
+	version  = "0.1.4"
 	appLabel = appName + " v" + version
 	sideDef  = 42            // sidebar width until resized; state.json keeps the resized one
 	sideMin  = 30            // narrowest sidebar, and narrowest pane beside it
