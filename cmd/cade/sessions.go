@@ -193,3 +193,27 @@ func userPrompt(line []byte) string {
 	}
 	return text
 }
+
+// firstPrompts returns up to n typed prompts from a session file, each cut to
+// limit runes so a pasted log can't blow up the title request.
+func firstPrompts(path string, n, limit int) []string {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	var out []string
+	r := bufio.NewReader(f) // not Scanner: lines can exceed its 64KB limit
+	for len(out) < n {
+		line, err := r.ReadBytes('\n')
+		if bytes.Contains(line, []byte(`"type":"user"`)) {
+			if p := []rune(userPrompt(line)); len(p) > 0 {
+				out = append(out, string(p[:min(len(p), limit)]))
+			}
+		}
+		if err != nil {
+			break
+		}
+	}
+	return out
+}

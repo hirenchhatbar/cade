@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -452,4 +453,22 @@ func TestEditorSetting(t *testing.T) {
 	if a.set == nil || a.set.typing || a.editorCmd() != "nvim ." {
 		t.Fatalf("Esc: set %v cmd %q", a.set, a.editorCmd())
 	}
+}
+
+func TestShowTitle(t *testing.T) {
+	a := &app{rename: &renaming{id: "a", title: "typed", busy: true}}
+	a.showTitle(titleEvent{id: "b", title: "other session"})
+	if a.rename.title != "typed" || !a.rename.busy {
+		t.Fatalf("result for another session applied: %+v", a.rename)
+	}
+	a.showTitle(titleEvent{id: "a", err: errors.New("boom")})
+	if a.rename.title != "typed" || a.rename.busy || len(a.toasts) != 1 {
+		t.Fatalf("failure: %+v, toasts %v", a.rename, a.toasts)
+	}
+	a.showTitle(titleEvent{id: "a", title: "Fix login flow"})
+	if a.rename.title != "Fix login flow" {
+		t.Fatalf("title = %q", a.rename.title)
+	}
+	a.rename = nil
+	a.showTitle(titleEvent{id: "a", title: "late"}) // dialog closed: no panic
 }

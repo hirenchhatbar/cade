@@ -49,7 +49,7 @@ Run cade on the host, not inside the container: it needs your `claude` binary an
 
 On first start cade adds the directory you launched it from as a project. Add more with `a`.
 Sessions are read from `~/.claude/projects` and refreshed every 2 seconds. A session's title is the
-one set in cade with `r`, else its `/rename` name, else its agent name, else Claude's AI title,
+one set in cade with `r` (`Ctrl+T` in that dialog asks Claude for one from the first prompts), else its `/rename` name, else its agent name, else Claude's AI title,
 else its first prompt. Starred sessions (`s`, `*` or a click on the ★ column) stay at the top of their project.
 
 Press `?` for the shortcut dialog. `cade --help` lists the command-line options.
@@ -68,7 +68,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `←/→` | collapse / expand project (`→` on a session opens it) |
 | `a` | add project (name, then directory; ⇥ opens a match) |
 | `⇧PgUp/Dn` | move project up / down |
-| `r` | rename session (empty = Claude's title) |
+| `r` | rename session (empty = Claude's title, ^T generates one) |
 | `s/*` | star / unstar session; starred go first (click ★ too) |
 | `d/dd` | d: delete session from disk · dd: remove project from list (both ask) |
 | `g/G` | top / end |

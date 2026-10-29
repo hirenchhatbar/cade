@@ -527,8 +527,11 @@ func (a *app) drawRename(win vaxis.Window) {
 		vaxis.Segment{Text: " Title: ", Style: on(th.key)},
 		vaxis.Segment{Text: truncateLeft(rn.title, bw-10), Style: on(th.base)},
 		vaxis.Segment{Text: "▏", Style: on(th.key)})
+	if rn.busy {
+		box.PrintTruncate(bh-2, vaxis.Segment{Text: " generating title…", Style: on(th.muted)})
+	}
 	box.PrintTruncate(bh-1, append([]vaxis.Segment{{Text: " ", Style: th.muted}},
-		a.hintSegs("[⏎] save (empty = Claude's title)  [Esc] cancel")...)...)
+		a.hintSegs("[⏎] save (empty = Claude's title)  [^T] generate  [Esc] cancel")...)...)
 }
 
 // drawConfirm overlays the pending yes/no question with what it touches.

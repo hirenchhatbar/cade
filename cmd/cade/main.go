@@ -17,7 +17,7 @@ import (
 
 const (
 	appName  = "cade"
-	version  = "0.1.4"
+	version  = "0.1.5"
 	appLabel = appName + " v" + version
 	sideDef  = 42            // sidebar width until resized; state.json keeps the resized one
 	sideMin  = 30            // narrowest sidebar, and narrowest pane beside it
@@ -91,6 +91,7 @@ type renaming struct {
 	p     *project
 	id    string
 	title string
+	busy  bool // Ctrl+T: claude is generating a title
 }
 
 // settings is the , dialog. issues are what checkConfig found after the last
@@ -312,6 +313,8 @@ func (a *app) handle(ev vaxis.Event) bool {
 		}
 	case diffEvent:
 		a.showDiff(ev)
+	case titleEvent:
+		a.showTitle(ev)
 	case toastExpire:
 		a.expireToast(ev.id)
 	case clearSel:

@@ -58,7 +58,7 @@ var sidebarKeys = []binding{
 	{label: "⇧PgUp/Dn", keys: []string{"Shift+Page_Up"}, hint: "reorder", help: "move project up / down",
 		run: func(a *app) { a.moveSaved(-1) }},
 	{keys: []string{"Shift+Page_Down"}, run: func(a *app) { a.moveSaved(1) }},
-	{label: "r", keys: []string{"r"}, hint: "rename", help: "rename session (empty = Claude's title)",
+	{label: "r", keys: []string{"r"}, hint: "rename", help: "rename session (empty = Claude's title, ^T generates one)",
 		run: (*app).openRename},
 	{label: "s/*", keys: []string{"s", "*"}, hint: "star", help: "star / unstar session; starred go first (click ★ too)",
 		run: (*app).toggleStar},
@@ -632,8 +632,61 @@ func (a *app) renameKey(k vaxis.Key) {
 		}
 		a.save()
 		a.refresh()
+	case k.MatchString("Ctrl+t"):
+		a.genTitle()
 	default:
 		typeKey(&rn.title, k)
+	}
+}
+
+// titlePrompt asks for a sidebar title; the session's first prompts follow it.
+const titlePrompt = "Write a short title (at most 6 words) for a coding session that started with the prompts below. Reply with the title only, no quotes or punctuation at the end.\n\n"
+
+// titleEvent carries a title generated for session id back to the event loop.
+type titleEvent struct {
+	id, title string
+	err       error
+}
+
+// genTitle asks the project's account, in the background, for a title made
+// from the session's first prompts; showTitle puts it in the rename dialog.
+func (a *app) genTitle() {
+	rn := a.rename
+	if rn.busy {
+		return
+	}
+	prompts := firstPrompts(filepath.Join(projectDir(a.root(rn.p), rn.p.Dir), rn.id+".jsonl"), 5, 1000)
+	if len(prompts) == 0 {
+		a.notify(toastNotice, "No prompts in this session to make a title from")
+		return
+	}
+	rn.busy = true
+	// No tools and nothing saved: a title request must not act or add a session.
+	cmd := a.account(rn.p).cmd(a.home, rn.p.Dir, "-p", "--no-session-persistence", "--tools", "")
+	cmd.Stdin = strings.NewReader(titlePrompt + strings.Join(prompts, "\n\n"))
+	id := rn.id
+	go func() {
+		out, err := cmd.Output()
+		title, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
+		a.vx.PostEvent(titleEvent{id, strings.Trim(title, " \"'`*#."), err})
+	}()
+}
+
+// showTitle fills the rename dialog with a generated title, unless it was
+// closed or moved to another session meanwhile.
+func (a *app) showTitle(ev titleEvent) {
+	rn := a.rename
+	if rn == nil || rn.id != ev.id {
+		return
+	}
+	rn.busy = false
+	switch {
+	case ev.err != nil:
+		a.notify(toastWarn, "Title generation failed: "+ev.err.Error())
+	case ev.title == "":
+		a.notify(toastWarn, "Claude returned no title")
+	default:
+		rn.title = ev.title
 	}
 }
 
