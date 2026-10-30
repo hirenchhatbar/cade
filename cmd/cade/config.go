@@ -30,6 +30,9 @@ type config struct {
 		Wrap   *bool `yaml:"wrap"`   // long lines wrap in the F3 diff; false cuts them with …. Default: true
 		Height int   `yaml:"height"` // like shell.height, for the diff
 	} `yaml:"diff"`
+	StatusBar struct {
+		Height int `yaml:"height"` // rows, up to barMax; 0 = as many as the longest hints need. Default: 0
+	} `yaml:"statusBar"`
 	Toasts struct {
 		Position string `yaml:"position"` // corner, see toastPositions. Default: top-right
 	} `yaml:"toasts"`
@@ -40,7 +43,8 @@ type config struct {
 		Height int `yaml:"height"` // % of the pane the F2 shell takes under the session, see splitMin. Default: 50
 	} `yaml:"shell"`
 	Editor struct {
-		Cmd string `yaml:"cmd"` // F5 editor, run by sh in the project dir. Default: $VISUAL, else $EDITOR, else vi
+		Cmd    string `yaml:"cmd"`    // F4 editor, run by sh in the project dir. Default: $VISUAL, else $EDITOR, else vi
+		Height int    `yaml:"height"` // like shell.height, for the editor
 	} `yaml:"editor"`
 }
 
@@ -89,10 +93,13 @@ func parseConfig(path string) (cfg config, issues []string, err error) {
 	if p := cfg.Toasts.Position; p != "" && !slices.Contains(toastPositions, p) {
 		issues = append(issues, fmt.Sprintf("toasts.position: %q is not one of %s", p, strings.Join(toastPositions, ", ")))
 	}
+	if h := cfg.StatusBar.Height; h < 0 || h > barMax {
+		issues = append(issues, fmt.Sprintf("statusBar.height: %d is not between 0 and %d", h, barMax))
+	}
 	for _, kh := range []struct {
 		key string
 		h   int
-	}{{"diff.height", cfg.Diff.Height}, {"shell.height", cfg.Shell.Height}} {
+	}{{"diff.height", cfg.Diff.Height}, {"editor.height", cfg.Editor.Height}, {"shell.height", cfg.Shell.Height}} {
 		if key, h := kh.key, kh.h; h != 0 && (h < splitMin || h > splitMax) {
 			issues = append(issues, fmt.Sprintf("%s: %d is not between %d and %d", key, h, splitMin, splitMax))
 		}

@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	appName  = "cade"
-	version  = "0.1.8"
+	appName  = "Cade"
+	version  = "0.1.10"
 	appLabel = appName + " v" + version
 	sideDef  = 42            // sidebar width until resized; state.json keeps the resized one
 	sideMin  = 30            // narrowest sidebar, and narrowest pane beside it
@@ -29,8 +29,8 @@ const (
 	focusAlt  = "F12"
 	diffKey   = "F3"
 	shellKey  = "F2"
-	editorKey = "F5"
-	zoomKey   = "F4"
+	editorKey = "F4"
+	zoomKey   = "F5"
 	zoomAlt   = "Ctrl+z" // Claude's own Ctrl+Z (suspend) only freezes the pane; the shell keeps it for job control
 	waitKey   = "Ctrl+f"
 	waitLbl   = "Ctrl+F"
@@ -127,8 +127,7 @@ type app struct {
 	active   string   // key into terms
 	back     string   // pane shown before the shell, which F2 returns to
 	shellDir string   // project dir the shell was started in
-	shellOn  bool     // shell on screen, under terms[back] when split, see paneTerms
-	editBack string   // pane shown before the editor, which F5 returns to
+	low      string   // shellID or editorID on screen, under terms[back] when split, see paneTerms; "" none
 	editDir  string   // project dir the editor was started in
 	grab     string   // term a left drag started in; it gets the drag until release
 	resizing bool     // a left drag started on the sidebar separator; it gets the drag until release
@@ -263,7 +262,7 @@ func usage() string {
 
 Usage: cade [option]
 
-With no option, cade opens a sidebar of your projects and their Claude
+With no option, Cade opens a sidebar of your projects and their Claude
 sessions; the selected session runs in the right pane. Press ? inside for
 all shortcuts.
 
@@ -274,8 +273,8 @@ Options:
   -v, --version  print the version
 
 Files in ` + filepath.Dir(projectsPath()) + `:
-  projects.json  projects, their order and collapsed state, session titles and stars (written by cade)
-  state.json     remembered UI state (written by cade)
+  projects.json  projects, their order and collapsed state, session titles and stars (written by Cade)
+  state.json     remembered UI state (written by Cade)
   config.yaml    theme and claude accounts (edited by you; the theme also from , settings)
 `
 }
@@ -410,10 +409,10 @@ func (a *app) open() {
 }
 
 // show puts terms[key] in the pane and focuses it; any session but the one split
-// above the shell hides the shell.
+// above the shell or editor hides it.
 func (a *app) show(key string) {
-	if key != shellID && (key != a.back || a.st.ShellFull) {
-		a.shellOn = false
+	if key != a.low && (key != a.back || *a.lowFull(a.low)) {
+		a.low = ""
 	}
 	if prev := a.terms[a.active]; prev != nil && a.active != key {
 		prev.Blur()
@@ -422,91 +421,81 @@ func (a *app) show(key string) {
 	a.setFocus(true)
 }
 
-// toggleShell shows the app's one $SHELL under the pane shown before (see paneTerms),
-// starting it in the cursor's project dir if needed; when shown it hides it, still
-// running, back to that pane, or the empty pane if there was none.
+// toggleShell shows the app's one $SHELL, see toggleLow.
 func (a *app) toggleShell() {
-	a.diff = nil
-	p := a.projects[a.current().p]
-	key := shellID
-	if a.shellOn {
-		a.shellOn = false
-		if a.active != key {
-			return
-		}
-		if a.terms[a.back] != nil {
-			a.show(a.back)
-		} else {
-			a.setFocus(false)
-			a.active = ""
-		}
-		return
-	}
-	if _, ok := a.terms[key]; !ok {
-		t := term.New(term.WithVaxis(a.vx))
-		t.Attach(func(ev vaxis.Event) { a.vx.PostEvent(termEvent{key, ev}) })
-		cmd := exec.Command(cmp.Or(os.Getenv("SHELL"), "sh"))
-		cmd.Dir = p.Dir
-		cmd.Env = append(os.Environ(), "PWD="+p.Dir)
-		w, h := a.paneSize()
-		if err := t.StartWithSize(cmd, w, h); err != nil {
-			a.fail("shell: ", err)
-			return
-		}
-		a.terms[key] = t
-		a.shellDir = p.Dir
-	}
-	a.back = a.active
-	a.shellOn = true
-	a.show(key)
+	a.toggleLow(shellID, exec.Command(cmp.Or(os.Getenv("SHELL"), "sh")), &a.shellDir)
 }
 
-// toggleEditor shows the app's one editor (editor.cmd) in the pane, starting it
-// in the cursor's project dir if needed; when shown it hides it, still running,
-// back to the pane shown before, or the empty pane if there was none.
+// toggleEditor shows the app's one editor (editor.cmd), see toggleLow.
 func (a *app) toggleEditor() {
+	// through sh, like editConfig, so a command with flags ("nvim .") works
+	a.toggleLow(editorID, exec.Command("sh", "-c", a.editorCmd()), &a.editDir)
+}
+
+// toggleLow shows the shell or editor key under the pane shown before (see
+// paneTerms), in place of the other, starting cmd in the cursor's project dir,
+// noted in dir, if needed; when shown it hides it, still running.
+func (a *app) toggleLow(key string, cmd *exec.Cmd, dir *string) {
 	a.diff = nil
-	key := editorID
-	if a.active == key || a.split() && a.back == key {
-		if a.back == key {
-			a.shellOn = false // the shell split under the editor hides with it
-		}
-		if a.terms[a.editBack] != nil {
-			a.show(a.editBack)
-		} else {
-			a.setFocus(false)
-			a.active = ""
-		}
+	if a.low == key {
+		a.hideLow()
 		return
 	}
 	if _, ok := a.terms[key]; !ok {
 		p := a.projects[a.current().p]
 		t := term.New(term.WithVaxis(a.vx))
 		t.Attach(func(ev vaxis.Event) { a.vx.PostEvent(termEvent{key, ev}) })
-		// through sh, like editConfig, so a command with flags ("nvim .") works
-		cmd := exec.Command("sh", "-c", a.editorCmd())
 		cmd.Dir = p.Dir
 		cmd.Env = append(os.Environ(), "PWD="+p.Dir)
 		w, h := a.paneSize()
 		if err := t.StartWithSize(cmd, w, h); err != nil {
-			a.fail("editor: ", err)
+			a.fail(key+": ", err)
 			return
 		}
 		a.terms[key] = t
-		a.editDir = p.Dir
+		*dir = p.Dir
 	}
-	a.editBack = a.active
-	if a.active == shellID { // F5 returns to the session the shell was over
-		a.editBack = a.back
+	if a.low == "" { // in place of the other, it keeps the session it was under
+		a.back = a.active
 	}
-	if a.editBack == key { // the full-height shell was over the editor
-		a.editBack = ""
-	}
+	a.low = key
 	a.show(key)
 }
 
-// toggleFull switches the diff, else the shell, between full height and split
-// under the session, remembered, and focuses it.
+// hideLow hides the shell or editor, still running, back to the session it was
+// under, or the empty pane if there was none.
+func (a *app) hideLow() {
+	key := a.low
+	a.low = ""
+	if a.active != key {
+		return
+	}
+	if a.terms[a.back] != nil {
+		a.show(a.back)
+	} else {
+		a.setFocus(false)
+		a.active = ""
+	}
+}
+
+// lowFull is the remembered F11 state of the shell or editor key.
+func (a *app) lowFull(key string) *bool {
+	if key == editorID {
+		return &a.st.EditorFull
+	}
+	return &a.st.ShellFull
+}
+
+// lowHeight is shell.height or editor.height, for key.
+func (a *app) lowHeight(key string) int {
+	if key == editorID {
+		return a.cfg.Editor.Height
+	}
+	return a.cfg.Shell.Height
+}
+
+// toggleFull switches the diff, else the shell or editor, between full height
+// and split under the session, remembered, and focuses it.
 func (a *app) toggleFull() {
 	if a.diff != nil {
 		a.st.DiffFull = !a.st.DiffFull
@@ -514,12 +503,13 @@ func (a *app) toggleFull() {
 		a.focusLower()
 		return
 	}
-	a.st.ShellFull = !a.st.ShellFull
+	f := a.lowFull(a.low)
+	*f = !*f
 	a.saveState()
-	a.show(shellID)
+	a.show(a.low)
 }
 
-// focusUpper focuses the session above the split diff or shell.
+// focusUpper focuses the session above the split diff, shell or editor.
 func (a *app) focusUpper() {
 	if a.diff != nil {
 		a.diff.focus = false
@@ -529,14 +519,14 @@ func (a *app) focusUpper() {
 	a.show(a.back)
 }
 
-// focusLower focuses the diff or shell.
+// focusLower focuses the diff, shell or editor.
 func (a *app) focusLower() {
 	if a.diff != nil {
 		a.setFocus(false)
 		a.diff.focus = true
 		return
 	}
-	a.show(shellID)
+	a.show(a.low)
 }
 
 // refresh reloads every project's sessions from disk and keeps the cursor on the same row.
@@ -586,18 +576,16 @@ func (a *app) closeTerm(id string) {
 		t.Close()
 		delete(a.terms, id)
 		a.clearAttn(id)
-		if id == shellID {
-			a.shellOn = false
+		if id == a.low {
+			a.low = ""
 		}
 		if a.active == id {
 			a.active, a.inTerm = "", false
 			switch {
-			case a.shellOn: // the session above the shell ended: the shell fills the pane
-				a.active = shellID
-			case id == shellID && a.terms[a.back] != nil:
+			case a.low != "": // the session above the shell or editor ended: it fills the pane
+				a.active = a.low
+			case (id == shellID || id == editorID) && a.terms[a.back] != nil:
 				a.active = a.back
-			case id == editorID && a.terms[a.editBack] != nil:
-				a.active = a.editBack
 			}
 		}
 	}
@@ -619,7 +607,7 @@ func (a *app) setFocus(inTerm bool) {
 
 // paneSize is the size of the focused term, or of the diff when it has focus.
 func (a *app) paneSize() (int, int) {
-	w, h := a.vx.Window().Size()
+	w, h := a.screen()
 	x, end := a.paneSpan(w)
 	key, ph := a.active, h-titleH
 	if a.diffFocused() {
@@ -641,8 +629,8 @@ type paneTerm struct {
 }
 
 // paneTerms lays out the pane on a screen h tall, top to bottom: the session and
-// the diff or shell split under it, which takes diff.height or shell.height % of
-// the rows; else the diff or the active term alone.
+// the diff, shell or editor split under it, which takes diff.height, shell.height
+// or editor.height % of the rows; else the diff or the active term alone.
 func (a *app) paneTerms(h int) []paneTerm {
 	rows := h - 2*titleH
 	lower, upper, pct, _ := a.lower()
@@ -656,26 +644,26 @@ func (a *app) paneTerms(h int) []paneTerm {
 	return []paneTerm{{upper, titleH, rows - sh}, {lower, h - sh, sh}}
 }
 
-// lower is what can split the pane under a session: the diff, else the shell
-// when shown; upper is the session it goes under, pct its height and full
+// lower is what can split the pane under a session: the diff, else the shell or
+// editor when shown; upper is the session it goes under, pct its height and full
 // whether F11 made it fill the pane.
 func (a *app) lower() (key, upper string, pct int, full bool) {
 	switch {
 	case a.diff != nil:
 		return diffID, a.active, splitPct(a.cfg.Diff.Height), a.st.DiffFull
-	case a.shellOn:
-		return shellID, a.back, splitPct(a.cfg.Shell.Height), a.st.ShellFull
+	case a.low != "":
+		return a.low, a.back, splitPct(a.lowHeight(a.low)), *a.lowFull(a.low)
 	}
 	return "", "", 0, false
 }
 
-// split reports whether the diff or the shell shares the pane with a session.
+// split reports whether the diff, shell or editor shares the pane with a session.
 func (a *app) split() bool {
 	key, upper, _, full := a.lower()
 	return key != "" && !full && a.terms[upper] != nil
 }
 
-func (a *app) lowerShown() bool  { return a.diff != nil || a.shellOn }
+func (a *app) lowerShown() bool  { return a.diff != nil || a.low != "" }
 func (a *app) diffFocused() bool { return a.diff != nil && a.diff.focus }
 
 // sideShown reports whether the sidebar is on screen: zooming hides it while the
@@ -834,7 +822,7 @@ func (a *app) editConfig() {
 // envEditor is the editor from the environment, picked like git does.
 func envEditor() string { return cmp.Or(os.Getenv("VISUAL"), os.Getenv("EDITOR"), "vi") }
 
-// editorCmd is the F5 editor's command: editor.cmd, else envEditor.
+// editorCmd is the F4 editor's command: editor.cmd, else envEditor.
 func (a *app) editorCmd() string { return cmp.Or(a.cfg.Editor.Cmd, envEditor()) }
 
 // setEditorCmd saves editor.cmd to config.yaml; "" means envEditor. A running
@@ -887,7 +875,7 @@ func (a *app) toggleConfirmQuit() {
 	a.cfg.Quit.Confirm = &confirm
 }
 
-// stepSplit changes section.height (shell or diff), pointed to by h, by dir
+// stepSplit changes section.height (shell, editor or diff), pointed to by h, by dir
 // steps, saving it to config.yaml.
 func (a *app) stepSplit(dir int, h *int, section string) {
 	v := min(max(splitPct(*h)+dir*splitStep, splitMin), splitMax)

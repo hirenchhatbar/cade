@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -77,9 +78,22 @@ func TestHelpAndHintsFromTable(t *testing.T) {
 		}
 	}
 	a := &app{}
-	hidden := a.hintPairs(sidebarKeys, true)
-	if len(hidden) != 2 || hidden[0][0] != "?" || hidden[1][0] != "H" {
-		t.Fatalf("hidden hints = %v", hidden)
+	shown, all := a.hints(sidebarKeys, false), a.hints(sidebarKeys, true)
+	if shown[0] != "[?] help" || !slices.Contains(shown, "[S] status bar") || slices.Contains(shown, "[⇥] pane") {
+		t.Fatalf("hints = %v", shown)
+	}
+	if !slices.Contains(all, "[⇥] pane") { // all ignores show, so the bar's height can't change with focus
+		t.Fatalf("all hints = %v", all)
+	}
+}
+
+func TestShiftSTogglesBarNotStar(t *testing.T) {
+	a := &app{}
+	if b := a.match(sidebarKeys, vaxis.Key{Keycode: 's', ShiftedCode: 'S', Text: "S", Modifiers: vaxis.ModShift}); b == nil || b.label != "S" {
+		t.Fatalf("Shift+s matched %v", b)
+	}
+	if b := a.match(sidebarKeys, vaxis.Key{Keycode: 's', Text: "s"}); b == nil || b.label != "s/*" {
+		t.Fatalf("s matched %v", b)
 	}
 }
 
@@ -190,8 +204,8 @@ func TestShellSplit(t *testing.T) {
 		t.Fatalf("row 21: %q", p.key)
 	}
 	a.key(vaxis.Key{Keycode: vaxis.KeyUp, Modifiers: vaxis.ModAlt})
-	if a.active != "s1" || !a.inTerm || !a.shellOn {
-		t.Fatalf("Alt+Up: active %q inTerm %v shellOn %v", a.active, a.inTerm, a.shellOn)
+	if a.active != "s1" || !a.inTerm || a.low != shellID {
+		t.Fatalf("Alt+Up: active %q inTerm %v low %q", a.active, a.inTerm, a.low)
 	}
 	a.key(vaxis.Key{Keycode: vaxis.KeyDown, Modifiers: vaxis.ModAlt})
 	if a.active != shellID {
@@ -207,11 +221,11 @@ func TestShellSplit(t *testing.T) {
 		t.Fatalf("F11 again: full %v panes %v", a.st.ShellFull, ps)
 	}
 	a.closeTerm("s1") // the session above ends: the shell fills the pane
-	if ps := a.paneTerms(42); a.active != shellID || !a.shellOn || len(ps) != 1 {
+	if ps := a.paneTerms(42); a.active != shellID || a.low != shellID || len(ps) != 1 {
 		t.Fatalf("session closed: active %q panes %v", a.active, ps)
 	}
 	a.show("s2") // another session hides the shell
-	if a.shellOn || a.split() {
+	if a.low != "" || a.split() {
 		t.Fatal("s2 should hide the shell")
 	}
 }
@@ -225,12 +239,12 @@ func TestDiffSplit(t *testing.T) {
 	a.cfg.Diff.Height = 25
 	a.key(vaxis.Key{Keycode: vaxis.KeyF02})
 	a.diff = &diffView{dir: "/a", busy: true} // what F3 opens, without running git
-	a.shellOn = false
+	a.low = ""
 	a.toggleShell() // F2 over the diff: the shell takes its place
-	if a.diff != nil || !a.shellOn {
-		t.Fatalf("F2: diff %v shellOn %v", a.diff, a.shellOn)
+	if a.diff != nil || a.low != shellID {
+		t.Fatalf("F2: diff %v low %q", a.diff, a.low)
 	}
-	a.shellOn, a.active = false, "s1"
+	a.low, a.active = "", "s1"
 	a.diff = &diffView{dir: "/a", busy: true, back: true, focus: true}
 	a.setFocus(false)
 	if ps := a.paneTerms(42); len(ps) != 2 || ps[0] != (paneTerm{"s1", 1, 30}) || ps[1] != (paneTerm{diffID, 32, 10}) {
@@ -320,13 +334,13 @@ func TestSidebarWidth(t *testing.T) {
 	}
 }
 
-// F4 and Ctrl+Z hide the sidebar while the pane has focus; the shell keeps Ctrl+Z.
+// F5 and Ctrl+Z hide the sidebar while the pane has focus; the shell keeps Ctrl+Z.
 func TestZoom(t *testing.T) {
 	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}},
 		terms: map[string]*term.Model{"s1": term.New(), shellID: term.New()}, active: "s1"}
-	a.key(vaxis.Key{Keycode: vaxis.KeyF04})
+	a.key(vaxis.Key{Keycode: vaxis.KeyF05})
 	if x, _ := a.paneSpan(100); !a.zoom || !a.inTerm || x != 0 {
-		t.Fatalf("F4: zoom %v inTerm %v x %d", a.zoom, a.inTerm, x)
+		t.Fatalf("F5: zoom %v inTerm %v x %d", a.zoom, a.inTerm, x)
 	}
 	a.key(vaxis.Key{Keycode: vaxis.KeyF12}) // to the sidebar: it shows again
 	if x, _ := a.paneSpan(100); !a.zoom || x != sideDef+1 {
@@ -391,41 +405,46 @@ func TestQuitAsks(t *testing.T) {
 	}
 }
 
-// F5 puts the app's editor in the pane and F5 again goes back; the editor keeps
-// Ctrl+F, and when it exits the pane returns to the session.
-func TestEditorToggle(t *testing.T) {
+// F4 splits the app's editor under the session like the shell, in the shell's
+// place; it keeps Ctrl+F, has its own height and F11, and F4 again hides it.
+func TestEditorSplit(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}},
-		terms: map[string]*term.Model{"s1": term.New(), editorID: term.New()}, active: "s1", inTerm: true,
-		attn: []string{"s1"}}
-	f5 := vaxis.Key{Keycode: vaxis.KeyF05}
-	a.key(f5)
-	if a.active != editorID || !a.inTerm {
-		t.Fatalf("F5: active %q inTerm %v", a.active, a.inTerm)
+		terms: map[string]*term.Model{"s1": term.New(), shellID: term.New(), editorID: term.New()}, active: "s1", inTerm: true}
+	a.cfg.Editor.Height = 75
+	f4 := vaxis.Key{Keycode: vaxis.KeyF04}
+	a.key(f4)
+	if ps := a.paneTerms(42); a.active != editorID || len(ps) != 2 || ps[0] != (paneTerm{"s1", 1, 10}) || ps[1] != (paneTerm{editorID, 12, 30}) {
+		t.Fatalf("F4: active %q panes %v", a.active, ps)
 	}
 	a.attn = []string{"s1"}
 	a.key(vaxis.Key{Keycode: 'f', Modifiers: vaxis.ModCtrl})
 	if a.active != editorID {
 		t.Fatalf("Ctrl+F in the editor should go to it, active %q", a.active)
 	}
-	a.key(f5)
-	if a.active != "s1" {
-		t.Fatalf("F5 again: active %q", a.active)
+	a.key(vaxis.Key{Keycode: vaxis.KeyUp, Modifiers: vaxis.ModAlt})
+	if a.active != "s1" || a.low != editorID {
+		t.Fatalf("Alt+Up: active %q low %q", a.active, a.low)
 	}
-	// F2 over the editor splits the shell under it; F5 hides both
-	a.terms[shellID] = term.New()
-	a.key(f5)
-	a.key(vaxis.Key{Keycode: vaxis.KeyF02})
-	if ps := a.paneTerms(42); len(ps) != 2 || ps[0].key != editorID || ps[1].key != shellID {
-		t.Fatalf("shell under editor: %v", ps)
+	a.key(vaxis.Key{Keycode: vaxis.KeyDown, Modifiers: vaxis.ModAlt})
+	a.key(vaxis.Key{Keycode: vaxis.KeyF11})
+	if ps := a.paneTerms(42); !a.st.EditorFull || a.st.ShellFull || len(ps) != 1 || ps[0].key != editorID {
+		t.Fatalf("F11: panes %v", ps)
 	}
-	a.key(f5)
-	if a.active != "s1" || a.shellOn {
-		t.Fatalf("F5 from the shell: active %q shellOn %v", a.active, a.shellOn)
+	a.key(vaxis.Key{Keycode: vaxis.KeyF11})
+	a.key(vaxis.Key{Keycode: vaxis.KeyF02}) // the shell takes the editor's place, under the same session
+	if ps := a.paneTerms(42); a.active != shellID || len(ps) != 2 || ps[0].key != "s1" || ps[1] != (paneTerm{shellID, 22, 20}) {
+		t.Fatalf("F2 over the editor: active %q panes %v", a.active, ps)
 	}
-	a.key(f5)
+	a.key(f4)
+	a.key(f4)
+	if a.active != "s1" || a.low != "" {
+		t.Fatalf("F4 again: active %q low %q", a.active, a.low)
+	}
+	a.key(f4)
 	a.closeTerm(editorID) // the editor quit
-	if a.active != "s1" {
-		t.Fatalf("editor closed: active %q", a.active)
+	if a.active != "s1" || a.low != "" {
+		t.Fatalf("editor closed: active %q low %q", a.active, a.low)
 	}
 }
 

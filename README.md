@@ -1,4 +1,4 @@
-# cade
+# Cade
 
 ```
  ██████╗ █████╗ ██████╗ ███████╗
@@ -11,11 +11,11 @@
 
 A small terminal ADE for [Claude Code](https://claude.com/claude-code). The left sidebar lists your
 projects and their Claude sessions as a tree; the right pane runs the real `claude` CLI for the
-selected session. cade is only a wrapper: every key, paste and mouse event in the Claude pane goes
+selected session. Cade is only a wrapper: every key, paste and mouse event in the Claude pane goes
 to Claude unchanged, so Claude's own shortcuts and commands keep working.
 
 ```
- SESSIONS               cade v0.1.0 │ cade › fix login flow (34b6e4a0)
+ SESSIONS               Cade v0.1.0 │ cade › fix login flow (34b6e4a0)
  ▾ cade  ~/code/cade                │
    ├─ [n] new session               │   (claude runs here)
    ├─ ● fix login flow   (34b6e4a0) │
@@ -43,13 +43,13 @@ make build      # static binary at bin/cade
 ./bin/cade      # run from any directory
 ```
 
-Run cade on the host, not inside the container: it needs your `claude` binary and `~/.claude`.
+Run Cade on the host, not inside the container: it needs your `claude` binary and `~/.claude`.
 
 ## Usage
 
-On first start cade adds the directory you launched it from as a project. Add more with `a`.
+On first start Cade adds the directory you launched it from as a project. Add more with `a`.
 Sessions are read from `~/.claude/projects` and refreshed every 2 seconds. A session's title is the
-one set in cade with `r` (`Ctrl+T` in that dialog asks Claude for one from the first prompts), else its `/rename` name, else its agent name, else Claude's AI title,
+one set in Cade with `r` (`Ctrl+T` in that dialog asks Claude for one from the first prompts), else its `/rename` name, else its agent name, else Claude's AI title,
 else its first prompt. Starred sessions (`s`, `*` or a click on the ★ column) stay at the top of their project.
 
 Press `?` for the shortcut dialog. `cade --help` lists the command-line options.
@@ -65,7 +65,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `l/⏎` | open session (click works too; new one on a project row) |
 | `n` | new session in this project |
 | `/` | fuzzy search session titles, all projects |
-| `←/→` | collapse / expand project (`→` on a session opens it) |
+| `←/→` | collapse / expand project (→ on a session opens it) |
 | `a` | add project (name, then directory; ⇥ opens a match) |
 | `⇧PgUp/Dn` | move project up / down |
 | `r` | rename session (empty = Claude's title, ^T generates one) |
@@ -74,27 +74,27 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `g/G` | top / end |
 | `⇥` | go to Claude pane |
 | `-/+` | narrower / wider sidebar (or drag the line beside it), remembered |
-| `,` | settings: theme, hints, sidebar side and width, shell and diff height, editor, edit config.yaml in $EDITOR |
+| `,` | settings: theme, status bar and its height, sidebar side and width, shell, diff and editor height, editor command, edit config.yaml in $EDITOR |
 | `?` | this help |
 | `q` | quit (asks while sessions run) |
-| `H` | show / hide these hints |
+| `S` | show / hide the status bar, remembered; its height in , settings |
 
 ### Claude pane
 
 | Key | Action |
 |---|---|
 | `Ctrl+Esc` | switch sidebar ↔ pane (also F12) |
-| `F3` | git diff of the session's project, split under it, sidebar too; again closes it; s: side by side ↔ unified |
 | `F2` | one shell for the app, started in the project's directory, split under the pane, sidebar too; again hides it |
-| `F5` | one editor for the app (editor.cmd in , settings), started in the project's directory, sidebar too; again hides it |
+| `F3` | git diff of the session's project, split under it, sidebar too; again closes it; s: side by side ↔ unified; ^D/^U: half page |
+| `F4` | one editor for the app (editor.cmd in , settings), started in the project's directory, split under the pane in the shell's place, sidebar too; again hides it |
+| `F5/^Z` | hide / show the sidebar (Ctrl+Z too, except in the shell), sidebar too |
 | `Ctrl+F` | focus next waiting session (◆), oldest first, sidebar too; not in the editor |
 | `^⇥` | go to sidebar, cursor to the session opened before (cycles, latest first, kept across restarts), sidebar too |
-| `F4/^Z` | hide / show the sidebar (Ctrl+Z too, except in the shell), sidebar too |
-| `Ctrl+⇧Q` | quit cade, sidebar too (asks while sessions run) |
+| `Ctrl+⇧Q` | quit Cade, sidebar too (asks while sessions run) |
 | `^↑/^↓` | go to sidebar, cursor up / down, sidebar too |
 | `^⇧↑/^⇧↓` | go to sidebar, previous / next project, sidebar too |
-| `⌥↑/⌥↓` | with the diff or shell split under the session: focus the session / the diff or shell |
-| `F11` | diff or shell full height ↔ split under the session, remembered; split heights in , settings |
+| `⌥↑/⌥↓` | with the diff, shell or editor split under the session: focus the session / the diff, shell or editor |
+| `F11` | diff, shell or editor full height ↔ split under the session, remembered; split heights in , settings |
 | `⇧PgUp/Dn` | scroll back / forward (PgUp/PgDn too) |
 | `wheel` | scroll; or drag the scrollbar |
 | `drag` | select text, 2×click word, 3×click line → copied |
@@ -107,10 +107,10 @@ your terminal must allow clipboard writes from programs. If Claude turns on mous
 `Shift` to select.
 
 When a session other than the one you're typing in needs you (Claude rings the bell on a
-permission prompt or when it waits for input), cade rings your terminal's bell, sends a desktop
+permission prompt or when it waits for input), Cade rings your terminal's bell, sends a desktop
 notification, marks the session `◆` with its title in bold, and counts waiting sessions in the
 pane's title bar. `Ctrl+F` opens the one that has waited longest, from the sidebar or the Claude
-pane; press it again for the next. cade starts Claude with
+pane; press it again for the next. Cade starts Claude with
 `--settings '{"preferredNotifChannel":"terminal_bell"}'` for this.
 
 ## Configuration
@@ -120,9 +120,9 @@ All files live in `~/.config/cade/` (`$XDG_CONFIG_HOME/cade/` if set; on macOS
 
 | File | Written by | Contents |
 |---|---|---|
-| `projects.json` | cade | projects, their order and collapsed state, session titles and stars |
-| `state.json` | cade | remembered UI state (hints hidden, sidebar left or right and its width, diff side by side or unified, diff and shell full or split, opened sessions latest first: cursor starts on last one) |
-| `config.yaml` | you (cade writes only `theme`, `quit.confirm`, `shell.height`, `diff.height` and `editor.cmd`) | theme, diff, toasts, quit, shell, editor, Claude accounts |
+| `projects.json` | Cade | projects, their order and collapsed state, session titles and stars |
+| `state.json` | Cade | remembered UI state (status bar hidden, sidebar left or right and its width, diff side by side or unified, diff, shell and editor full or split, opened sessions latest first: cursor starts on last one) |
+| `config.yaml` | you (Cade writes only `theme`, `statusBar.height`, `quit.confirm`, `shell.height`, `diff.height`, `editor.cmd` and `editor.height`) | theme, diff, status bar, toasts, quit, shell, editor, Claude accounts |
 
 ### Themes
 
@@ -153,7 +153,7 @@ place: `F3` hides the shell and `F2` the diff. Keys scroll the diff while it has
 move the focus to the session and back, `F11` makes the diff full height and back (remembered on
 its own), and a drag selects and copies, side by side only from the half it started in. With no
 session open, the diff fills the pane. It is side by side; `s` switches to unified and back, and
-cade remembers the choice. It reloads every 2 seconds and keeps the scroll position. Long lines
+Cade remembers the choice. It reloads every 2 seconds and keeps the scroll position. Long lines
 wrap inside their column; to cut them with `…` instead, or to set its height (50% by default,
 from 10 to 90):
 
@@ -161,6 +161,19 @@ from 10 to 90):
 diff:
   wrap: false
   height: 40
+```
+
+### Status bar
+
+The bar along the bottom shows Cade's name and version, then, right-aligned, the keys for whatever has focus: the
+sidebar, the Claude pane, the diff, search or the open dialog. `S` in the sidebar hides and shows
+it; Cade remembers the choice. It takes as many rows as the longest list of keys needs at the
+window's width, so it keeps its height as focus moves. To fix it at 1 to 5 rows instead, cutting
+keys that don't fit with `…` (`[?] help` comes first, so it stays):
+
+```yaml
+statusBar:
+  height: 1
 ```
 
 ### Toasts
@@ -188,7 +201,7 @@ quit:
 
 `F2` opens the shell split under the session, so you can copy from Claude while typing in the
 shell: a drag in either half selects and copies, and keys go to the half that has focus.
-`⌥↑/⌥↓` move the focus between them. `F11` makes the shell full height and back; cade
+`⌥↑/⌥↓` move the focus between them. `F11` makes the shell full height and back; Cade
 remembers the choice. Some terminals keep `F11` for their own fullscreen; turn that off there.
 The shell takes 50% of the pane by default, from 10 to 90:
 
@@ -198,17 +211,21 @@ shell:
 ```
 
 ### Editor
-`F5` runs one editor for the app in the pane, started in the cursor's project directory; `F5` again
-hides it, still running, back to the pane before. `F2` over it splits the shell under the editor.
-The command runs through `sh`, so flags work; the default is `$VISUAL`, else `$EDITOR`, else `vi`:
+`F4` runs one editor for the app, started in the cursor's project directory, split under the
+session like the `F2` shell, in its place: `F4` hides the shell, `F2` the editor and `F3` either.
+`F4` again hides it, still running. `⌥↑/⌥↓` move focus between session and editor, and `F11`
+makes the editor full height and back (remembered on its own). The command runs through `sh`,
+so flags work; the default is `$VISUAL`, else `$EDITOR`, else `vi`. The editor takes 50% of the
+pane by default, from 10 to 90:
 
 ```yaml
 editor:
   cmd: nvim .
+  height: 70
 ```
 
-Keys go to the editor except cade's own (`Ctrl+Esc`, `F2`–`F5`, `F11`, `F12`, `Ctrl+Z`,
-`Ctrl+⇧Q`, `^↑/^↓`, `^⇧↑/^⇧↓`); `Ctrl+F` stays with the editor. Quitting cade closes
+Keys go to the editor except Cade's own (`Ctrl+Esc`, `F2`–`F5`, `F11`, `F12`, `Ctrl+Z`,
+`Ctrl+⇧Q`, `^↑/^↓`, `^⇧↑/^⇧↓`); `Ctrl+F` stays with the editor. Quitting Cade closes
 the editor without saving.
 
 ### Settings dialog
@@ -216,18 +233,20 @@ the editor without saving.
 `,` opens settings. Picking a theme applies at once and writes the `theme` key to `config.yaml`;
 the rest of the file, comments included, is kept (indentation is normalised to two spaces).
 "Confirm quit" switches `quit.confirm`, written to `config.yaml` the same way.
+"Status bar (S)" shows or hides the status bar, like `S`; it is saved in `state.json`.
+"Status bar height" steps `statusBar.height` from auto (0) to 5 rows, written to `config.yaml` the same way.
 "Sidebar" puts the sessions sidebar on the left (default) or right; it is saved in `state.json`.
 "Sidebar width" steps the sidebar width by 2 columns (default 42, at least 30, leaving the pane at least 30); `-`/`+` in the sidebar and dragging the line between sidebar and pane do the same. It is saved in `state.json`.
-"Shell height" and "Diff height" step `shell.height` and `diff.height` by 10%, written to `config.yaml` the same way.
-"Editor (F5)" edits `editor.cmd` as text: `⏎` saves it to `config.yaml` the same way (empty = `$VISUAL`, else `$EDITOR`), `Esc` cancels; a running editor keeps its old command.
-"Edit config.yaml" suspends cade and opens the file in `$VISUAL`, else `$EDITOR`, else `vi`. On
-save cade checks the file: a clean one takes effect at once (account changes apply to sessions
+"Shell height", "Diff height" and "Editor height" step `shell.height`, `diff.height` and `editor.height` by 10%, written to `config.yaml` the same way.
+"Editor (F4)" edits `editor.cmd` as text: `⏎` saves it to `config.yaml` the same way (empty = `$VISUAL`, else `$EDITOR`), `Esc` cancels; a running editor keeps its old command.
+"Edit config.yaml" suspends Cade and opens the file in `$VISUAL`, else `$EDITOR`, else `vi`. On
+save Cade checks the file: a clean one takes effect at once (account changes apply to sessions
 started after it), otherwise the dialog lists the issues and the config from before the edit stays
 in use. Bells from Claude while the editor is open are missed.
 
 `cade --check` lists every problem in `config.yaml` (unknown keys with a "did you mean", a bad
 `default`, programs not on `PATH`, a bad theme, missing `configDir` and `dirs` directories) and
-exits 1 if there are any. Themes colour cade's own panels only; the Claude pane
+exits 1 if there are any. Themes colour Cade's own panels only; the Claude pane
 uses Claude's `/theme`.
 
 `config.json` from older versions is no longer read. JSON is valid YAML, so renaming it to
@@ -235,7 +254,7 @@ uses Claude's `/theme`.
 
 ### Claude accounts
 
-Without a `claude` section, cade runs plain `claude`. Accounts let you run claude through a wrapper
+Without a `claude` section, Cade runs plain `claude`. Accounts let you run claude through a wrapper
 such as firejail, or use more than one Claude login:
 
 ```yaml
@@ -255,13 +274,13 @@ claude:
 
 | Field | Meaning |
 |---|---|
-| `command` | program and flags; cade appends `--session-id <id>` or `--resume <id>`. Default `claude` |
-| `configDir` | passed as `CLAUDE_CONFIG_DIR`; cade reads this account's sessions from it. Default `~/.claude` |
+| `command` | program and flags; Cade appends `--session-id <id>` or `--resume <id>`. Default `claude` |
+| `configDir` | passed as `CLAUDE_CONFIG_DIR`; Cade reads this account's sessions from it. Default `~/.claude` |
 | `env` | extra environment variables |
 | `dirs` | projects in these directories use this account; the deepest match wins, others use `default` |
 
 Values may use a leading `~`, `$VAR` and `$PWD` (the project directory). No shell runs, so `~` in
-the middle of a flag is not expanded: use `$HOME`. cade refuses to start if the file is invalid
+the middle of a flag is not expanded: use `$HOME`. Cade refuses to start if the file is invalid
 (unknown fields included) or an account's program is not on `PATH`, so it never falls back to
 plain `claude` quietly. A bad theme or a missing directory doesn't stop it; `cade --check` lists those too.
 

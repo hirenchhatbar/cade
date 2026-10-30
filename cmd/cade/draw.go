@@ -9,7 +9,10 @@ import (
 	"go.rockorager.dev/vaxis"
 )
 
-const titleH = 1 // title bar rows above each panel
+const (
+	titleH = 1 // title bar rows above each panel
+	barMax = 5 // most status bar rows statusBar.height may ask for
+)
 
 func cell(g string, s vaxis.Style) vaxis.Cell {
 	return vaxis.Cell{Character: vaxis.Character{Grapheme: g, Width: 1}, Style: s}
@@ -88,40 +91,38 @@ func (a *app) scrollbar(win vaxis.Window, x, cols, y, h, offset, m int, lit bool
 	}
 }
 
-// grid lays out key/description pairs in two aligned columns of [key] desc,
-// each column's keys padded to that column's widest key.
-func grid(pairs [][2]string, width int) []string {
-	colW := (width - 1) / 2
-	var keyW [2]int
-	for i, p := range pairs {
-		keyW[i%2] = max(keyW[i%2], runeLen(p[0])+2)
-	}
-	var lines []string
-	for i := 0; i < len(pairs); i += 2 {
-		line := ""
-		for c := 0; c < 2 && i+c < len(pairs); c++ {
-			p := pairs[i+c]
-			text := truncate(pad("["+p[0]+"]", keyW[c])+" "+p[1], colW)
-			if c == 0 {
-				text = pad(text, colW) + " "
-			}
-			line += text
+// flow packs items left to right into rows w wide, two spaces apart, the first
+// row starting first columns in. An item wider than a row gets a row of its own.
+func flow(items []string, w, first int) [][]string {
+	rows, x := [][]string{nil}, first
+	for _, it := range items {
+		gap := 0
+		if len(rows[len(rows)-1]) > 0 {
+			gap = 2
 		}
-		lines = append(lines, strings.TrimRight(line, " "))
+		if x > 0 && x+gap+runeLen(it) > w {
+			rows, x, gap = append(rows, nil), 0, 0
+		}
+		rows[len(rows)-1] = append(rows[len(rows)-1], it)
+		x += gap + runeLen(it)
 	}
-	return lines
+	return rows
 }
 
-// hintPairs picks the bindings shown in the sidebar hint grid.
-func (a *app) hintPairs(bs []binding, onlyAlways bool) [][2]string {
-	var pairs [][2]string
+// hints are the [label] hint items of the bindings shown now, or of all of them,
+// help first so a short status bar never cuts it.
+func (a *app) hints(bs []binding, all bool) []string {
+	var items []string
 	for _, b := range bs {
-		if b.label == "" || b.hint == "" || (onlyAlways && !b.always) || (b.show != nil && !b.show(a)) {
+		if b.label == "" || b.hint == "" || !all && b.show != nil && !b.show(a) {
 			continue
 		}
-		pairs = append(pairs, [2]string{b.label, b.hint})
+		items = append(items, "["+b.label+"] "+b.hint)
 	}
-	return pairs
+	if i := slices.Index(items, "[?] help"); i > 0 {
+		items = slices.Insert(slices.Delete(items, i, i+1), 0, "[?] help")
+	}
+	return items
 }
 
 // hintSegs colors the [key] parts of a hint line.
@@ -160,7 +161,9 @@ func (a *app) draw() {
 	win := a.vx.Window()
 	win.Clear()
 	a.vx.HideCursor()
-	w, h := win.Size()
+	w, h := a.screen()
+	a.drawBar(win.New(0, h, w, -1))
+	win = win.New(0, 0, w, h)
 
 	if a.sideShown() {
 		a.drawSidebar(win.New(a.sideX(w), 0, a.sideW(), h))
@@ -178,29 +181,101 @@ func (a *app) draw() {
 	a.vx.Render()
 }
 
-// sidebarHints returns the lines under the tree for the current mode.
-func (a *app) sidebarHints() []string {
+// screen is the window's width and the height above the status bar.
+func (a *app) screen() (w, h int) {
+	w, h = a.vx.Window().Size()
+	return w, max(h-a.barH(w), 1)
+}
+
+// barRows lays out items in a status bar w wide, after the app label on its first row.
+func barRows(items []string, w int) [][]string { return flow(items, w-1, runeLen(appLabel)+2) }
+
+// barH is the status bar's rows on a screen w wide: statusBar.height, or with 0
+// the rows the longest binding table needs, so the bar keeps its height as focus moves.
+func (a *app) barH(w int) int {
+	if a.st.HideBar {
+		return 0
+	}
+	if n := a.cfg.StatusBar.Height; n > 0 {
+		return min(n, barMax)
+	}
+	n := 1
+	for _, bs := range barTables {
+		n = max(n, len(barRows(a.hints(bs, true), w)))
+	}
+	return n
+}
+
+// barTables are the tables barH fits; set in init, as the tables' run funcs reach barH.
+var barTables [][]binding
+
+func init() { barTables = [][]binding{sidebarKeys, paneKeys} }
+
+// barHints are the status bar's hints for whatever takes the keys, checked in key()'s order.
+func (a *app) barHints() []string {
+	split := func(hint string) []string { return strings.Split(hint, "  ") }
 	switch {
-	case a.search != nil:
-		return grid([][2]string{{"↑/↓", "pick"}, {"⏎", "open"}, {"Esc", "cancel"}}, a.sideW()-1)
+	case a.confirm != nil:
+		return split(confirmHint)
+	case a.diffFocused():
+		mode := "unified"
+		if a.st.UnifiedDiff {
+			mode = "side by side"
+		}
+		return []string{"[s] " + mode, "[Esc] close"}
 	case a.inTerm:
-		return grid(a.hintPairs(paneKeys, false), a.sideW()-1)
-	default:
-		return grid(a.hintPairs(sidebarKeys, a.st.HideHints), a.sideW()-1)
+		return a.hints(paneKeys, false)
+	case a.help:
+		return []string{"any key to close"}
+	case a.input != nil:
+		return split(a.addHint())
+	case a.rename != nil:
+		return split(renameHint)
+	case a.search != nil:
+		return []string{"[↑/↓] pick", "[⏎] open", "[Esc] cancel"}
+	case a.set != nil:
+		return split(a.settingsHint())
+	}
+	return a.hints(sidebarKeys, false)
+}
+
+// drawBar draws the status bar: the app name and version, then the hints right-aligned, cut
+// with … when they need more rows than the bar has.
+func (a *app) drawBar(win vaxis.Window) {
+	w, h := win.Size()
+	if h <= 0 {
+		return
+	}
+	th := a.th
+	win.Fill(cell(" ", th.base))
+	rows := barRows(a.barHints(), w)
+	cut := len(rows) > h
+	rows = rows[:min(len(rows), h)]
+	for y, r := range rows {
+		segs := []vaxis.Segment{{Text: " ", Style: th.muted}}
+		room := w - 1
+		if y == 0 {
+			segs = []vaxis.Segment{{Text: " " + appLabel + " ", Style: th.title}, {Text: " ", Style: th.muted}}
+			room -= runeLen(appLabel) + 2
+		}
+		line := strings.Join(r, "  ")
+		if cut && y == len(rows)-1 {
+			line = truncate(line+"  …", room)
+		}
+		line = strings.Repeat(" ", max(room-1-runeLen(line), 0)) + line // right-aligned, one space margin
+		win.PrintTruncate(y, append(segs, a.hintSegs(line)...)...)
 	}
 }
 
 func (a *app) drawSidebar(side vaxis.Window) {
 	th := a.th
 	side.Fill(cell(" ", th.base))
-	a.titleBar(side, " SESSIONS", "Cade v"+version+" ", !a.inTerm)
+	a.titleBar(side, " SESSIONS", "", !a.inTerm)
 	_, sh := side.Size()
 	tree := side.New(0, titleH, a.sideW(), sh-titleH)
 	_, treeH := tree.Size()
 
-	hints := a.sidebarHints()
-	reserved := len(hints) + 1 // + divider
-	a.visible = max(treeH-reserved, 1)
+	a.visible = max(treeH, 1)
 	a.keepCursorVisible()
 	rows := a.rows()
 	overflow := len(rows) > a.visible
@@ -218,12 +293,6 @@ func (a *app) drawSidebar(side vaxis.Window) {
 	if overflow && a.search == nil {
 		m := len(rows) - a.visible
 		a.scrollbar(tree, a.sideW()-1, 1, 0, a.visible, m-a.top, m, !a.inTerm || a.hover == sideBar)
-	}
-
-	y := treeH - reserved
-	tree.PrintTruncate(y, vaxis.Segment{Text: " " + strings.Repeat("─", a.sideW()-2), Style: th.muted})
-	for i, hint := range hints {
-		tree.PrintTruncate(y+1+i, append([]vaxis.Segment{{Text: " ", Style: th.muted}}, a.hintSegs(hint)...)...)
 	}
 }
 
@@ -313,11 +382,7 @@ func (a *app) drawPane(win vaxis.Window, w, h int) {
 		}
 		title := win.New(x, p.y-titleH, end-x, titleH)
 		if p.key == diffID {
-			mode := "unified"
-			if a.st.UnifiedDiff {
-				mode = "side by side"
-			}
-			a.titleBar(title, " DIFF › "+a.diff.name, right+"[s] "+mode+"  [Esc] close ", a.diff.focus)
+			a.titleBar(title, " DIFF › "+a.diff.name, right, a.diff.focus)
 			a.drawDiff(win.New(x, p.y, end-x, p.h))
 			continue
 		}
@@ -447,7 +512,6 @@ func (a *app) drawHelp(win vaxis.Window) {
 			vaxis.Segment{Text: "   " + pad("["+l[0]+"]", keyW+1), Style: on(th.key)},
 			vaxis.Segment{Text: l[1], Style: on(th.base)})
 	}
-	box.PrintTruncate(bh-1, vaxis.Segment{Text: " any key to close", Style: th.muted})
 }
 
 // dialog fills a centered bw×bh box (shrunk to fit win) with a title bar. on puts a
@@ -500,18 +564,21 @@ func (a *app) drawAdd(win vaxis.Window) {
 	if len(ms) == 0 {
 		box.PrintTruncate(titleH+4, vaxis.Segment{Text: "   no matching directories", Style: on(th.muted)})
 	}
-	hint := "[⏎/⇥/↓] directory  [Esc] cancel"
-	if in.step == 1 {
-		tick := "☐"
-		if in.hidden {
-			tick = "☑"
-		}
-		hint = "[⇥] open  [↑↓] pick  [⇧⇥] name  [⏎] add  [Alt+h] " + tick + " hidden  [Esc] cancel"
-	}
 	if in.err != "" {
 		box.PrintTruncate(bh-2, vaxis.Segment{Text: " ✗ " + in.err, Style: on(th.err)})
 	}
-	box.PrintTruncate(bh-1, append([]vaxis.Segment{{Text: " ", Style: th.muted}}, a.hintSegs(hint)...)...)
+}
+
+// addHint is the add-project dialog's status bar hint for its current step.
+func (a *app) addHint() string {
+	if a.input.step == 0 {
+		return "[⏎/⇥/↓] directory  [Esc] cancel"
+	}
+	tick := "☐"
+	if a.input.hidden {
+		tick = "☑"
+	}
+	return "[⇥] open  [↑↓] pick  [⇧⇥] name  [⏎] add  [Alt+h] " + tick + " hidden  [Esc] cancel"
 }
 
 // drawRename overlays the rename-session dialog.
@@ -530,9 +597,9 @@ func (a *app) drawRename(win vaxis.Window) {
 	if rn.busy {
 		box.PrintTruncate(bh-2, vaxis.Segment{Text: " generating title…", Style: on(th.muted)})
 	}
-	box.PrintTruncate(bh-1, append([]vaxis.Segment{{Text: " ", Style: th.muted}},
-		a.hintSegs("[⏎] save (empty = Claude's title)  [^T] generate  [Esc] cancel")...)...)
 }
+
+const renameHint = "[⏎] save (empty = Claude's title)  [^T] generate  [Esc] cancel"
 
 // drawConfirm overlays the pending yes/no question with what it touches.
 func (a *app) drawConfirm(win vaxis.Window) {
@@ -561,7 +628,6 @@ func (a *app) drawConfirm(win vaxis.Window) {
 		note = on(th.err)
 	}
 	box.PrintTruncate(bh-2, vaxis.Segment{Text: " " + c.note, Style: note})
-	box.PrintTruncate(bh-1, append([]vaxis.Segment{{Text: " ", Style: th.muted}}, a.hintSegs(confirmHint)...)...)
 }
 
 // drawMatch draws one directory row, the fuzzy-matched letters bold and underlined.
@@ -672,9 +738,13 @@ func (a *app) drawSettings(win vaxis.Window) {
 	// as tall as the add-project dialog so it covers the idle logo, taller when issues need it
 	box, on := a.dialog(win, " SETTINGS", 84, max(addListH+8, titleH+settingRows+3+extra))
 	bw, bh := box.Size()
-	hints := "☐"
-	if a.st.HideHints {
-		hints = "☑"
+	bar := "☑"
+	if a.st.HideBar {
+		bar = "☐"
+	}
+	barH := "‹ auto ›"
+	if n := a.cfg.StatusBar.Height; n > 0 {
+		barH = fmt.Sprintf("‹ %d ›", n)
 	}
 	side := "‹ left ›"
 	if a.st.SidebarRight {
@@ -689,15 +759,17 @@ func (a *app) drawSettings(win vaxis.Window) {
 		editor = st.cmd + "▏"
 	}
 	rows := [settingRows][2]string{
-		setTheme:  {"Theme", "‹ " + cmp.Or(a.cfg.Theme, defaultTheme) + " ›"},
-		setHints:  {"Hide hints", hints},
-		setSide:   {"Sidebar", side},
-		setSideW:  {"Sidebar width", fmt.Sprintf("‹ %d ›", a.sideW())},
-		setShell:  {"Shell height", fmt.Sprintf("‹ %d%% ›", splitPct(a.cfg.Shell.Height))},
-		setDiff:   {"Diff height", fmt.Sprintf("‹ %d%% ›", splitPct(a.cfg.Diff.Height))},
-		setQuit:   {"Confirm quit", quit},
-		setEditor: {"Editor (" + editorKey + ")", editor},
-		setEdit:   {"Edit config.yaml", "in " + envEditor() + ", checked on save"},
+		setTheme:   {"Theme", "‹ " + cmp.Or(a.cfg.Theme, defaultTheme) + " ›"},
+		setBar:     {"Status bar (S)", bar},
+		setBarH:    {"Status bar height", barH},
+		setSide:    {"Sidebar", side},
+		setSideW:   {"Sidebar width", fmt.Sprintf("‹ %d ›", a.sideW())},
+		setShell:   {"Shell height", fmt.Sprintf("‹ %d%% ›", splitPct(a.cfg.Shell.Height))},
+		setDiff:    {"Diff height", fmt.Sprintf("‹ %d%% ›", splitPct(a.cfg.Diff.Height))},
+		setEditorH: {"Editor height", fmt.Sprintf("‹ %d%% ›", splitPct(a.cfg.Editor.Height))},
+		setQuit:    {"Confirm quit", quit},
+		setEditor:  {"Editor (" + editorKey + ")", editor},
+		setEdit:    {"Edit config.yaml", "in " + envEditor() + ", checked on save"},
 	}
 	for i, r := range rows {
 		base, label, mark := on(th.base), on(th.key), "   "
@@ -709,20 +781,25 @@ func (a *app) drawSettings(win vaxis.Window) {
 			vaxis.Segment{Text: pad(r[0], 18), Style: label},
 			vaxis.Segment{Text: pad(r[1], bw-21), Style: base})
 	}
-	hint := "[↑↓] pick  [←→/⏎] change  [e] edit config  [Esc] close"
 	if len(st.issues) > 0 {
 		y := titleH + settingRows + 2
 		box.PrintTruncate(y, vaxis.Segment{Text: fmt.Sprintf(" ✗ config.yaml: %d issue(s); the config before the edit is still in use", len(st.issues)), Style: on(th.err)})
 		for i, is := range st.issues {
-			if y+1+i >= bh-1 { // screen too short: keep the footer
+			if y+1+i >= bh-1 { // screen too short: keep a blank last row
 				break
 			}
 			box.PrintTruncate(y+1+i, vaxis.Segment{Text: "   " + truncate(is, bw-4), Style: on(th.base)})
 		}
-		hint = "[e] edit again  [Esc] keep old config"
 	}
-	if st.typing {
-		hint = "[⏎] save (empty = $VISUAL, else $EDITOR)  [Esc] cancel"
+}
+
+// settingsHint is the settings dialog's status bar hint.
+func (a *app) settingsHint() string {
+	switch {
+	case a.set.typing:
+		return "[⏎] save (empty = $VISUAL, else $EDITOR)  [Esc] cancel"
+	case len(a.set.issues) > 0:
+		return "[e] edit again  [Esc] keep old config"
 	}
-	box.PrintTruncate(bh-1, append([]vaxis.Segment{{Text: " ", Style: th.muted}}, a.hintSegs(hint)...)...)
+	return "[↑↓] pick  [←→/⏎] change  [e] edit config  [Esc] close"
 }

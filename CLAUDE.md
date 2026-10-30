@@ -7,6 +7,8 @@
 @.claude/rules/docs.md
 @.claude/rules/settings-dialog.md
 @.claude/rules/cli.md
+@.claude/rules/key-bindings.md
+@.claude/rules/no-worktrees.md
 
 ## Docs
 
@@ -34,6 +36,8 @@ reliable, not more. Section outgrow usefulness, move relevant directory
 
 Mistakes made before, must not repeat. Check before acting; append new entry
 when caught doing one.
+
+- Make changes in the main checkout, never in a `.claude/worktrees/` worktree; work done there never reaches the user's build.
 
 ## graphify
 

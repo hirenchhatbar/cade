@@ -168,12 +168,16 @@ func TestScrollTree(t *testing.T) {
 	}
 }
 
-func TestGrid(t *testing.T) {
-	lines := grid([][2]string{{"j/k", "move"}, {"n", "new session"}, {"⇧PgUp/Dn", "reorder"}, {"?", "help"}, {"q", "quit"}}, 39)
+func TestFlow(t *testing.T) {
+	rows := flow([]string{"[j/k] move", "[n] new session", "[⇧PgUp/Dn] reorder", "[?] help", "a very long item over the width"}, 32, 5)
+	var lines []string
+	for _, r := range rows {
+		lines = append(lines, strings.Join(r, "  "))
+	}
 	want := []string{
-		"[j/k]      move     [n] new session",
+		"[j/k] move  [n] new session", // after 5 columns taken
 		"[⇧PgUp/Dn] reorder  [?] help",
-		"[q]        quit",
+		"a very long item over the width",
 	}
 	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("got\n%s", strings.Join(lines, "\n"))

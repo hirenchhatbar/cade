@@ -51,8 +51,8 @@ func (a *app) openDiff() {
 		a.closeDiff()
 		return
 	}
-	if a.shellOn {
-		a.toggleShell()
+	if a.low != "" {
+		a.hideLow()
 	}
 	p := a.diffDir()
 	a.diff = &diffView{name: p.Name, dir: p.Dir, back: a.inTerm, focus: true}
