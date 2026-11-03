@@ -213,10 +213,9 @@ func init() { barTables = [][]binding{sidebarKeys, paneKeys} }
 
 // barHints are the status bar's hints for whatever takes the keys, checked in key()'s order.
 func (a *app) barHints() []string {
-	split := func(hint string) []string { return strings.Split(hint, "  ") }
 	switch {
 	case a.confirm != nil:
-		return split(confirmHint)
+		return nil // dialogs show their own keys
 	case a.diffFocused():
 		mode := "unified"
 		if a.st.UnifiedDiff {
@@ -225,16 +224,10 @@ func (a *app) barHints() []string {
 		return []string{"[s] " + mode, "[Esc] close"}
 	case a.inTerm:
 		return a.hints(paneKeys, false)
-	case a.help:
-		return []string{"any key to close"}
-	case a.input != nil:
-		return split(a.addHint())
-	case a.rename != nil:
-		return split(renameHint)
+	case a.help, a.input != nil, a.rename != nil, a.set != nil:
+		return nil
 	case a.search != nil:
 		return []string{"[↑/↓] pick", "[⏎] open", "[Esc] cancel"}
-	case a.set != nil:
-		return split(a.settingsHint())
 	}
 	return a.hints(sidebarKeys, false)
 }
@@ -512,6 +505,7 @@ func (a *app) drawHelp(win vaxis.Window) {
 			vaxis.Segment{Text: "   " + pad("["+l[0]+"]", keyW+1), Style: on(th.key)},
 			vaxis.Segment{Text: l[1], Style: on(th.base)})
 	}
+	a.dialogKeys(box, "any key to close")
 }
 
 // dialog fills a centered bw×bh box (shrunk to fit win) with a title bar. on puts a
@@ -527,6 +521,12 @@ func (a *app) dialog(win vaxis.Window, title string, bw, bh int) (box vaxis.Wind
 	box.Fill(cell(" ", panel))
 	a.titleBar(box, title, "", true)
 	return box, func(s vaxis.Style) vaxis.Style { s.Background = panel.Background; return s }
+}
+
+// dialogKeys draws a dialog's key hint on its last row.
+func (a *app) dialogKeys(box vaxis.Window, hint string) {
+	_, bh := box.Size()
+	box.PrintTruncate(bh-1, append([]vaxis.Segment{{Text: " ", Style: a.th.muted}}, a.hintSegs(hint)...)...)
 }
 
 const addListH = 14 // directory rows in the add-project dialog
@@ -567,9 +567,10 @@ func (a *app) drawAdd(win vaxis.Window) {
 	if in.err != "" {
 		box.PrintTruncate(bh-2, vaxis.Segment{Text: " ✗ " + in.err, Style: on(th.err)})
 	}
+	a.dialogKeys(box, a.addHint())
 }
 
-// addHint is the add-project dialog's status bar hint for its current step.
+// addHint is the add-project dialog's key hint for its current step.
 func (a *app) addHint() string {
 	if a.input.step == 0 {
 		return "[⏎/⇥/↓] directory  [Esc] cancel"
@@ -597,6 +598,7 @@ func (a *app) drawRename(win vaxis.Window) {
 	if rn.busy {
 		box.PrintTruncate(bh-2, vaxis.Segment{Text: " generating title…", Style: on(th.muted)})
 	}
+	a.dialogKeys(box, renameHint)
 }
 
 const renameHint = "[⏎] save (empty = Claude's title)  [^T] generate  [Esc] cancel"
@@ -617,7 +619,7 @@ func (a *app) drawConfirm(win vaxis.Window) {
 	}
 	bw = max(bw, runeLen(c.note)+2, 84) // as large as the add-project dialog, so the logo behind doesn't show around it
 	box, on := a.dialog(win, " "+c.title, bw, max(titleH+len(c.rows)+4, addListH+8))
-	bw, bh := box.Size()
+	bw, _ = box.Size()
 	for i, r := range c.rows {
 		box.PrintTruncate(titleH+1+i,
 			vaxis.Segment{Text: " " + pad(r[0]+":", labelW+1), Style: on(th.muted)},
@@ -627,7 +629,8 @@ func (a *app) drawConfirm(win vaxis.Window) {
 	if c.danger {
 		note = on(th.err)
 	}
-	box.PrintTruncate(bh-2, vaxis.Segment{Text: " " + c.note, Style: note})
+	box.PrintTruncate(titleH+len(c.rows)+2, vaxis.Segment{Text: " " + c.note, Style: note})
+	a.dialogKeys(box, confirmHint)
 }
 
 // drawMatch draws one directory row, the fuzzy-matched letters bold and underlined.
@@ -785,15 +788,16 @@ func (a *app) drawSettings(win vaxis.Window) {
 		y := titleH + settingRows + 2
 		box.PrintTruncate(y, vaxis.Segment{Text: fmt.Sprintf(" ✗ config.yaml: %d issue(s); the config before the edit is still in use", len(st.issues)), Style: on(th.err)})
 		for i, is := range st.issues {
-			if y+1+i >= bh-1 { // screen too short: keep a blank last row
+			if y+1+i >= bh-1 { // screen too short: keep the key hint
 				break
 			}
 			box.PrintTruncate(y+1+i, vaxis.Segment{Text: "   " + truncate(is, bw-4), Style: on(th.base)})
 		}
 	}
+	a.dialogKeys(box, a.settingsHint())
 }
 
-// settingsHint is the settings dialog's status bar hint.
+// settingsHint is the settings dialog's key hint.
 func (a *app) settingsHint() string {
 	switch {
 	case a.set.typing:

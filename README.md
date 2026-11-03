@@ -166,7 +166,8 @@ diff:
 ### Status bar
 
 The bar along the bottom shows Cade's name and version, then, right-aligned, the keys for whatever has focus: the
-sidebar, the Claude pane, the diff, search or the open dialog. `S` in the sidebar hides and shows
+sidebar, the Claude pane, the diff or search. A dialog shows its keys on its own last row, so
+the bar shows none while one is open. `S` in the sidebar hides and shows
 it; Cade remembers the choice. It takes as many rows as the longest list of keys needs at the
 window's width, so it keeps its height as focus moves. To fix it at 1 to 5 rows instead, cutting
 keys that don't fit with `…` (`[?] help` comes first, so it stays):
