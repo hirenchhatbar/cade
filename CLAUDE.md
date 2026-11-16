@@ -38,6 +38,7 @@ Mistakes made before, must not repeat. Check before acting; append new entry
 when caught doing one.
 
 - Make changes in the main checkout, never in a `.claude/worktrees/` worktree; work done there never reaches the user's build.
+- Create pane terminals with `newTerm` (`cmd/cade/main.go`), never bare `term.New(term.WithVaxis(...))`: `WithVaxis` sets `TERM=xterm-kitty` on a kitty-protocol host, which often has no terminfo and breaks zsh key bindings and redraws.
 
 ## graphify
 

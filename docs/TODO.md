@@ -1,0 +1,8 @@
+- A guided tour in app
+- A practical video for onboarding - Maybe YouTube hosted
+- Ability to change every key bindings
+- Show information and bell once session is completed waiting user inputs or get noticed, showing title in bold, jump to it using key bindings in sequence
+- CLAUDE.md file, rules and skills
+- Trigger it in the browser using Wasm and WASI
+- Benchmarking
+- Ralph Wiggum loop: a native Go runner, compatible with the snarktank/ralph files (`prd.json`, `progress.txt`, `<promise>COMPLETE</promise>`), configured per project; a loop view with the `prd.json` checklist and live steps (`claude -p --output-format stream-json --session-id`); human intervention through pause, edit prompt, gates on the attention queue, and taking over an iteration with `--resume`; the permission-skip flag is opt-in per project

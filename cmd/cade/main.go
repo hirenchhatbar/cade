@@ -17,7 +17,7 @@ import (
 
 const (
 	appName  = "Cade"
-	version  = "0.1.11"
+	version  = "0.1.13"
 	appLabel = appName + " v" + version
 	sideDef  = 42            // sidebar width until resized; state.json keeps the resized one
 	sideMin  = 30            // narrowest sidebar, and narrowest pane beside it
@@ -34,6 +34,10 @@ const (
 	zoomAlt   = "Ctrl+z" // Claude's own Ctrl+Z (suspend) only freezes the pane; the shell keeps it for job control
 	waitKey   = "Ctrl+f"
 	waitLbl   = "Ctrl+F"
+	newKey    = "Ctrl+n"
+	newLbl    = "Ctrl+N"
+	delKey    = "Ctrl+d"
+	delLbl    = "Ctrl+D"
 	recentMax = 50             // sessions kept in state.json's history
 	quitKey   = "Ctrl+Shift+q" // needs the kitty keyboard protocol, like Ctrl+Esc; sidebar q always works
 	quitLbl   = "Ctrl+⇧Q"
@@ -394,8 +398,7 @@ func (a *app) open() {
 	}
 	args = append(args, "--settings", notifSettings)
 	if _, ok := a.terms[key]; !ok {
-		t := term.New(term.WithVaxis(a.vx))
-		t.Attach(func(ev vaxis.Event) { a.vx.PostEvent(termEvent{key, ev}) })
+		t := a.newTerm(key)
 		cmd := a.account(p).cmd(a.home, p.Dir, args...)
 		w, h := a.paneSize()
 		if err := t.StartWithSize(cmd, w, h); err != nil {
@@ -406,6 +409,16 @@ func (a *app) open() {
 	}
 	a.visit(key)
 	a.show(key)
+}
+
+// newTerm makes the terminal for terms[key], its events posted to the loop.
+func (a *app) newTerm(key string) *term.Model {
+	t := term.New(term.WithVaxis(a.vx))
+	// WithVaxis picks xterm-kitty on a kitty-protocol host, but that terminfo is
+	// often not installed: zsh then drops its key bindings and redraws by reprinting
+	t.TERM = "xterm-256color"
+	t.Attach(func(ev vaxis.Event) { a.vx.PostEvent(termEvent{key, ev}) })
+	return t
 }
 
 // show puts terms[key] in the pane and focuses it; any session but the one split
@@ -443,8 +456,7 @@ func (a *app) toggleLow(key string, cmd *exec.Cmd, dir *string) {
 	}
 	if _, ok := a.terms[key]; !ok {
 		p := a.projects[a.current().p]
-		t := term.New(term.WithVaxis(a.vx))
-		t.Attach(func(ev vaxis.Event) { a.vx.PostEvent(termEvent{key, ev}) })
+		t := a.newTerm(key)
 		cmd.Dir = p.Dir
 		cmd.Env = append(os.Environ(), "PWD="+p.Dir)
 		w, h := a.paneSize()

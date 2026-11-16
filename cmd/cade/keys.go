@@ -81,7 +81,7 @@ var sidebarKeys = []binding{
 }
 
 // paneKeys apply while the Claude pane has focus; everything else goes to Claude.
-// The keys up to the scroll keys (paneKeys[:13]) are checked first, in any focus state.
+// The keys up to the scroll keys (paneKeys[:14]) are checked first, in any focus state.
 var paneKeys = []binding{
 	{label: focusLbl, keys: []string{focusKey, focusAlt}, hint: "sidebar", help: "switch sidebar ↔ pane (also " + focusAlt + ")",
 		when: hasPane, run: func(a *app) { a.setFocus(!a.inTerm) }},
@@ -97,6 +97,11 @@ var paneKeys = []binding{
 	{label: "F5/^Z", keys: []string{zoomKey}, hint: "zoom",
 		help: "hide / show the sidebar (Ctrl+Z too, except in the shell), sidebar too", run: (*app).toggleZoom},
 	{keys: []string{zoomAlt}, when: func(a *app) bool { return a.active != shellID }, run: (*app).toggleZoom},
+	// the shell (next history) and editor (vim: completion) keep Ctrl+N
+	{label: newLbl, keys: []string{newKey}, hint: "new",
+		when: func(a *app) bool { return !a.inTerm || a.active != shellID && a.active != editorID },
+		help: "new session in the open session's project, else the cursor's, sidebar too; not in the shell or editor",
+		run:  func(a *app) { a.newSessionIn(slices.Index(a.projects, a.diffDir())) }},
 	// the editor keeps Ctrl+F (vim: page down)
 	{label: waitLbl, keys: []string{waitKey}, hint: "waiting", show: func(a *app) bool { return len(a.attn) > 0 },
 		when: func(a *app) bool { return !a.inTerm || a.active != editorID },
@@ -116,6 +121,10 @@ var paneKeys = []binding{
 	{keys: []string{"Alt+Down"}, when: (*app).split, run: (*app).focusLower},
 	{label: fullKey, keys: []string{fullKey}, hint: "full", show: (*app).lowerShown, when: (*app).lowerShown,
 		help: "diff, shell or editor full height ↔ split under the session, remembered; split heights in , settings", run: (*app).toggleFull},
+	// pane only: Claude's own Ctrl+D (exit) is given up; the shell and editor keep theirs
+	{label: delLbl, keys: []string{delKey}, hint: "delete",
+		when: func(a *app) bool { return a.active != shellID && a.active != editorID },
+		help: "delete this session from disk (asks)", run: (*app).confirmActive},
 	{label: "⇧PgUp/Dn", keys: []string{"Page_Up", "Shift+Page_Up"}, hint: "scroll", help: "scroll back / forward (PgUp/PgDn too)",
 		when: hasScrollback, run: func(a *app) { a.pageScroll(1) }},
 	{keys: []string{"Page_Down", "Shift+Page_Down"}, when: hasScrollback, run: func(a *app) { a.pageScroll(-1) }},
@@ -175,7 +184,7 @@ func (a *app) key(k vaxis.Key) bool {
 		return false
 	}
 	// prompts and help keep Esc for cancel
-	if b := a.match(paneKeys[:13], k); b != nil && !paste && (a.inTerm || !a.help && a.input == nil && a.rename == nil && a.search == nil && a.set == nil) {
+	if b := a.match(paneKeys[:14], k); b != nil && !paste && (a.inTerm || !a.help && a.input == nil && a.rename == nil && a.search == nil && a.set == nil) {
 		if !release {
 			b.run(a)
 		}
@@ -232,8 +241,10 @@ func (a *app) pageScroll(dir int) {
 	t.ScrollTo(off + dir*max(1, h-1))
 }
 
-func (a *app) newSession() {
-	p := a.current().p
+func (a *app) newSession() { a.newSessionIn(a.current().p) }
+
+// newSessionIn starts a new session in project p.
+func (a *app) newSessionIn(p int) {
 	a.projects[p].Collapsed = false
 	a.cursor = slices.Index(a.rows(), row{p, rowNew})
 	a.open()
@@ -486,6 +497,17 @@ func (a *app) confirmSession() {
 		note:   "Deletes the transcript from disk. Can't undo.",
 		danger: true,
 		yes:    func() { a.deleteSession(p, s.ID) },
+	}
+}
+
+// confirmActive asks to delete the session in the pane, like d on its sidebar row.
+func (a *app) confirmActive() {
+	p := a.diffDir()
+	p.Collapsed = false
+	a.restore(rowKey{dir: p.Dir, id: a.active})
+	// never fall through to whatever row the cursor was on
+	if c := a.current(); c.s >= 0 && a.projects[c.p].sessions[c.s].ID == a.active {
+		a.confirmSession()
 	}
 }
 

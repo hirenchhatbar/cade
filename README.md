@@ -88,6 +88,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `F3` | git diff of the session's project, split under it, sidebar too; again closes it; s: side by side ↔ unified; ^D/^U: half page |
 | `F4` | one editor for the app (editor.cmd in , settings), started in the project's directory, split under the pane in the shell's place, sidebar too; again hides it |
 | `F5/^Z` | hide / show the sidebar (Ctrl+Z too, except in the shell), sidebar too |
+| `Ctrl+N` | new session in the open session's project, else the cursor's, sidebar too; not in the shell or editor |
 | `Ctrl+F` | focus next waiting session (◆), oldest first, sidebar too; not in the editor |
 | `^⇥` | go to sidebar, cursor to the session opened before (cycles, latest first, kept across restarts), sidebar too |
 | `Ctrl+⇧Q` | quit Cade, sidebar too (asks while sessions run) |
@@ -95,6 +96,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `^⇧↑/^⇧↓` | go to sidebar, previous / next project, sidebar too |
 | `⌥↑/⌥↓` | with the diff, shell or editor split under the session: focus the session / the diff, shell or editor |
 | `F11` | diff, shell or editor full height ↔ split under the session, remembered; split heights in , settings |
+| `Ctrl+D` | delete this session from disk (asks) |
 | `⇧PgUp/Dn` | scroll back / forward (PgUp/PgDn too) |
 | `wheel` | scroll; or drag the scrollbar |
 | `drag` | select text, 2×click word, 3×click line → copied |

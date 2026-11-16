@@ -391,6 +391,10 @@ func encodeKitty(key vaxis.Key, flags uint8) string {
 	if flags == 0 {
 		return ""
 	}
+	// kitty spec: lock modifiers are reported only with "report all keys"
+	if flags&kittyKeyboardFlagReportAll == 0 {
+		key.Modifiers &^= vaxis.ModCapsLock | vaxis.ModNumLock
+	}
 	if key.EventType == vaxis.EventRelease {
 		if flags&kittyKeyboardFlagReportEvents == 0 {
 			return ""
@@ -530,7 +534,8 @@ func kittyTextIsPlainInput(key vaxis.Key) bool {
 	if key.Modifiers&^vaxis.ModShift != 0 {
 		return false
 	}
-	return key.ShiftedCode > 0 && key.Text == string(key.ShiftedCode)
+	// a host that does not report the shifted code still sends the typed text
+	return key.ShiftedCode == 0 || key.Text == string(key.ShiftedCode)
 }
 
 func kittyModifiersPreventText(mods vaxis.ModifierMask) bool {
