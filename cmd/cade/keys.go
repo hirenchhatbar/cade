@@ -121,6 +121,9 @@ var paneKeys = []binding{
 	{keys: []string{"Alt+Down"}, when: (*app).split, run: (*app).focusLower},
 	{label: fullKey, keys: []string{fullKey}, hint: "full", show: (*app).lowerShown, when: (*app).lowerShown,
 		help: "diff, shell or editor full height ↔ split under the session, remembered; split heights in , settings", run: (*app).toggleFull},
+	{label: renLbl, keys: []string{renKey}, hint: "rename",
+		when: func(a *app) bool { return a.active != shellID && a.active != editorID },
+		help: "rename this session (goes to the sidebar)", run: (*app).renameActive},
 	// pane only: Claude's own Ctrl+D (exit) is given up; the shell and editor keep theirs
 	{label: delLbl, keys: []string{delKey}, hint: "delete",
 		when: func(a *app) bool { return a.active != shellID && a.active != editorID },
@@ -502,13 +505,28 @@ func (a *app) confirmSession() {
 
 // confirmActive asks to delete the session in the pane, like d on its sidebar row.
 func (a *app) confirmActive() {
+	if a.cursorToActive() {
+		a.confirmSession()
+	}
+}
+
+// renameActive opens the rename dialog for the pane's session; the dialog
+// takes keys only while the sidebar has focus.
+func (a *app) renameActive() {
+	if a.cursorToActive() {
+		a.setFocus(false)
+		a.openRename()
+	}
+}
+
+// cursorToActive puts the sidebar cursor on the pane's session and reports
+// whether it got there, so callers never fall through to another row.
+func (a *app) cursorToActive() bool {
 	p := a.diffDir()
 	p.Collapsed = false
 	a.restore(rowKey{dir: p.Dir, id: a.active})
-	// never fall through to whatever row the cursor was on
-	if c := a.current(); c.s >= 0 && a.projects[c.p].sessions[c.s].ID == a.active {
-		a.confirmSession()
-	}
+	c := a.current()
+	return c.s >= 0 && a.projects[c.p].sessions[c.s].ID == a.active
 }
 
 // confirmProject asks to remove the cursor's project from cade's list.

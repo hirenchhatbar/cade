@@ -96,6 +96,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `^⇧↑/^⇧↓` | go to sidebar, previous / next project, sidebar too |
 | `⌥↑/⌥↓` | with the diff, shell or editor split under the session: focus the session / the diff, shell or editor |
 | `F11` | diff, shell or editor full height ↔ split under the session, remembered; split heights in , settings |
+| `Ctrl+R` | rename this session (goes to the sidebar) |
 | `Ctrl+D` | delete this session from disk (asks) |
 | `⇧PgUp/Dn` | scroll back / forward (PgUp/PgDn too) |
 | `wheel` | scroll; or drag the scrollbar |

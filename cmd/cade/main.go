@@ -38,6 +38,8 @@ const (
 	newLbl    = "Ctrl+N"
 	delKey    = "Ctrl+d"
 	delLbl    = "Ctrl+D"
+	renKey    = "Ctrl+r" // Claude's own Ctrl+R (history search) is given up; the shell and editor keep theirs
+	renLbl    = "Ctrl+R"
 	recentMax = 50             // sessions kept in state.json's history
 	quitKey   = "Ctrl+Shift+q" // needs the kitty keyboard protocol, like Ctrl+Esc; sidebar q always works
 	quitLbl   = "Ctrl+⇧Q"
