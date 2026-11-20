@@ -224,9 +224,14 @@ func TestShellSplit(t *testing.T) {
 	if ps := a.paneTerms(42); a.active != shellID || a.low != shellID || len(ps) != 1 {
 		t.Fatalf("session closed: active %q panes %v", a.active, ps)
 	}
-	a.show("s2") // another session hides the shell
-	if a.low != "" || a.split() {
-		t.Fatal("s2 should hide the shell")
+	a.show("s2") // another session: the shell moves under it
+	if ps := a.paneTerms(42); a.low != shellID || a.back != "s2" || len(ps) != 2 || ps[0].key != "s2" {
+		t.Fatalf("s2: low %q back %q panes %v", a.low, a.back, ps)
+	}
+	a.st.ShellFull = true
+	a.show("s1") // over a full-height shell: hides it
+	if a.low != "" {
+		t.Fatal("s1 should hide the full-height shell")
 	}
 }
 
@@ -515,5 +520,18 @@ func TestRecentSessions(t *testing.T) {
 	}
 	if got := strings.Join(loadState(statePath()).Recent, " "); got != "s2 s3 gone s1" {
 		t.Fatalf("saved history %q", got)
+	}
+}
+
+// Opening another session keeps the diff open under it, focus on the session.
+func TestOpenKeepsDiff(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}, {ID: "s2"}}}}},
+		terms: map[string]*term.Model{"s1": term.New(), "s2": term.New()}, active: "s1", pending: map[string]bool{}}
+	a.diff = &diffView{dir: "/a", busy: true, focus: true}
+	a.cursor = 3 // s2
+	a.open()
+	if a.diff == nil || a.diff.focus || a.active != "s2" || !a.inTerm {
+		t.Fatalf("diff %v active %q inTerm %v", a.diff, a.active, a.inTerm)
 	}
 }

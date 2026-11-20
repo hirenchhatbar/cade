@@ -104,7 +104,8 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 
 Mouse wheel and the scrollbar scroll the list when it doesn't fit.
 
-Open sessions keep running when you switch to another one; `●` marks them. Copying uses OSC 52, so
+Open sessions keep running when you switch to another one; `●` marks them. A split shell, editor
+or diff stays open under the session you switch to; the diff follows its project. Copying uses OSC 52, so
 your terminal must allow clipboard writes from programs. If Claude turns on mouse reporting, hold
 `Shift` to select.
 

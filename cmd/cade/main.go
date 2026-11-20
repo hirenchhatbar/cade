@@ -380,7 +380,6 @@ func (a *app) save() { a.fail("save failed: ", saveProjects(a.cfgPath, a.project
 // open switches to the selected session's terminal, starting claude if needed.
 // On a header or new-session row it starts a new session in that project.
 func (a *app) open() {
-	a.diff = nil
 	cur := a.current()
 	p := a.projects[cur.p]
 	var key string
@@ -409,6 +408,13 @@ func (a *app) open() {
 	}
 	a.visit(key)
 	a.show(key)
+	if a.diff != nil { // stays open under the session, on its project
+		a.diff.focus = false
+		if a.diff.dir != p.Dir {
+			a.diff = &diffView{name: p.Name, dir: p.Dir, back: a.diff.back}
+			a.loadDiff()
+		}
+	}
 }
 
 // newTerm makes the terminal for terms[key], its events posted to the loop.
@@ -421,11 +427,15 @@ func (a *app) newTerm(key string) *term.Model {
 	return t
 }
 
-// show puts terms[key] in the pane and focuses it; any session but the one split
-// above the shell or editor hides it.
+// show puts terms[key] in the pane and focuses it; a split shell or editor moves
+// under session key, a full-height one is hidden.
 func (a *app) show(key string) {
-	if key != a.low && (key != a.back || *a.lowFull(a.low)) {
-		a.low = ""
+	if key != a.low && a.low != "" {
+		if *a.lowFull(a.low) {
+			a.low = ""
+		} else {
+			a.back = key
+		}
 	}
 	if prev := a.terms[a.active]; prev != nil && a.active != key {
 		prev.Blur()
