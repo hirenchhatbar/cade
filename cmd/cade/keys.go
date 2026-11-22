@@ -71,7 +71,7 @@ var sidebarKeys = []binding{
 	{label: "-/+", keys: []string{"-"}, hint: "width", help: "narrower / wider sidebar (or drag the line beside it), remembered",
 		run: func(a *app) { a.stepSide(-1) }},
 	{keys: []string{"+", "="}, run: func(a *app) { a.stepSide(1) }},
-	{label: ",", keys: []string{","}, hint: "settings", help: "settings: theme, status bar and its height, sidebar side and width, shell, diff and editor height, editor command, edit config.yaml in $EDITOR",
+	{label: ",", keys: []string{","}, hint: "settings", help: "settings: theme, status bar and its height, sidebar side and width, shell, diff and editor size, editor command, edit config.yaml in $EDITOR",
 		run: func(a *app) { a.set = &settings{} }},
 	{label: "?", keys: []string{"?"}, hint: "help", help: "this help", idle: "all shortcuts",
 		run: func(a *app) { a.help = true }},
@@ -117,10 +117,18 @@ var paneKeys = []binding{
 		run: toSidebar((*app).prevProject)},
 	{keys: []string{"Ctrl+Shift+Down"}, run: toSidebar((*app).nextProject)},
 	{label: "⌥↑/⌥↓", keys: []string{"Alt+Up"}, hint: "split focus", show: (*app).split, when: (*app).split,
-		help: "with the diff, shell or editor split under the session: focus the session / the diff, shell or editor", run: (*app).focusUpper},
+		help: "with the diff, shell or editor split with the session: focus the session / the diff, shell or editor", run: (*app).focusUpper},
 	{keys: []string{"Alt+Down"}, when: (*app).split, run: (*app).focusLower},
+	{label: "⌥⇧←/→", keys: []string{"Alt+Shift+Left", "Alt+Shift+Up"}, hint: "resize", show: (*app).split, when: (*app).split,
+		help: "move the split line: ← / ↑ grows the diff, shell or editor, → / ↓ shrinks it, saved to config.yaml; or drag the line",
+		run:  func(a *app) { a.resizeSplit(1) }},
+	{keys: []string{"Alt+Shift+Right", "Alt+Shift+Down"}, when: (*app).split, run: func(a *app) { a.resizeSplit(-1) }},
+	{label: colsKey, keys: []string{colsKey}, hint: "side by side", show: (*app).lowerShown, when: (*app).lowerShown,
+		help: fmt.Sprintf("diff, shell or editor beside ↔ under the session, remembered; under while the pane is under %d columns", 2*splitMinW+1),
+		run:  (*app).toggleCols},
 	{label: fullKey, keys: []string{fullKey}, hint: "full", show: (*app).lowerShown, when: (*app).lowerShown,
-		help: "diff, shell or editor full height ↔ split under the session, remembered; split heights in , settings", run: (*app).toggleFull},
+		help: "focused window fills the pane ↔ split: the session (diff, shell or editor stays open), or the diff, shell or editor (remembered); split sizes in , settings",
+		run:  (*app).toggleFull},
 	{label: renLbl, keys: []string{renKey}, hint: "rename",
 		when: func(a *app) bool { return a.active != shellID && a.active != editorID },
 		help: "rename this session (goes to the sidebar)", run: (*app).renameActive},
@@ -313,13 +321,18 @@ func (a *app) mouse(ev vaxis.Mouse) {
 		}
 		return
 	}
+	if ev.Button == vaxis.MouseLeftButton && (a.dragging || ev.EventType == vaxis.EventPress && a.onSplitLine(ev.Col, ev.Row, w, h)) {
+		a.dragging = ev.EventType != vaxis.EventRelease
+		a.dragSplit(ev.Col, ev.Row, w, h)
+		return
+	}
 	if ev.Row >= h { // the status bar: only a drag that started above it goes on, held to its last row
 		if a.grab == "" {
 			return
 		}
 		ev.Row = h - 1
 	}
-	p := a.paneTermAt(ev.Row, h)
+	p := a.paneTermAt(ev.Col, ev.Row, w, h)
 	t := a.terms[p.key]
 	drag := ev.Button == vaxis.MouseLeftButton && ev.EventType != vaxis.EventRelease
 	if ev.Button == vaxis.MouseLeftButton {
@@ -331,10 +344,10 @@ func (a *app) mouse(ev vaxis.Mouse) {
 	a.hover = noBar
 	x, end := a.paneSpan(w)
 	switch {
-	case p.key == diffID && ev.Col >= x && ev.Col < end:
-		ev.Col, ev.Row = ev.Col-x, ev.Row-p.y
+	case p.key == diffID && ev.Col >= p.x && ev.Col < p.x+p.w:
+		ev.Col, ev.Row = ev.Col-p.x, ev.Row-p.y
 		a.diffMouse(ev)
-	case t != nil && ev.Col >= end-barW && ev.Col < end: // pane scrollbar
+	case t != nil && ev.Col >= p.x+p.w-barW && ev.Col < p.x+p.w: // pane scrollbar
 		a.hover = paneBar
 		if drag {
 			if !a.inTerm {
@@ -349,17 +362,17 @@ func (a *app) mouse(ev vaxis.Mouse) {
 		ev.Col -= a.sideX(w)
 		a.sidebarMouse(ev, drag)
 	case t != nil:
-		ev.Col, ev.Row = ev.Col-x, ev.Row-p.y
+		ev.Col, ev.Row = ev.Col-p.x, ev.Row-p.y
 		a.paneMouse(t, ev)
 	}
 }
 
-// paneTermAt is the pane term at row of a screen h tall, its title bar included,
-// or the one a left drag started in, so a selection can't jump to the other term.
-func (a *app) paneTermAt(row, h int) paneTerm {
-	ps := a.paneTerms(h)
+// paneTermAt is the pane term at col, row of a screen w × h, its title bar
+// included, or the one a left drag started in, so a selection can't jump to the other term.
+func (a *app) paneTermAt(col, row, w, h int) paneTerm {
+	ps := a.paneTerms(w, h)
 	for _, p := range ps {
-		if p.key == a.grab || a.grab == "" && row < p.y+p.h {
+		if p.key == a.grab || a.grab == "" && row < p.y+p.h && col < p.x+p.w {
 			return p
 		}
 	}

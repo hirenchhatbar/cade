@@ -197,10 +197,10 @@ func TestShellSplit(t *testing.T) {
 	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}, {ID: "s2"}}}}},
 		terms: map[string]*term.Model{"s1": term.New(), "s2": term.New(), shellID: term.New()}, active: "s1", inTerm: true}
 	a.key(vaxis.Key{Keycode: vaxis.KeyF02})
-	if ps := a.paneTerms(42); len(ps) != 2 || ps[0] != (paneTerm{"s1", 1, 20}) || ps[1] != (paneTerm{shellID, 22, 20}) {
+	if ps := a.paneTerms(testW, 42); len(ps) != 2 || ps[0] != stacked(a, "s1", 1, 20) || ps[1] != stacked(a, shellID, 22, 20) {
 		t.Fatalf("split: %v", ps)
 	}
-	if p := a.paneTermAt(21, 42); p.key != shellID { // the shell's title bar
+	if p := a.paneTermAt(0, 21, testW, 42); p.key != shellID { // the shell's title bar
 		t.Fatalf("row 21: %q", p.key)
 	}
 	a.key(vaxis.Key{Keycode: vaxis.KeyUp, Modifiers: vaxis.ModAlt})
@@ -212,26 +212,79 @@ func TestShellSplit(t *testing.T) {
 		t.Fatalf("Alt+Down: active %q", a.active)
 	}
 	a.key(vaxis.Key{Keycode: vaxis.KeyF11})
-	if ps := a.paneTerms(42); !a.st.ShellFull || len(ps) != 1 || ps[0].key != shellID || loadState(statePath()).ShellFull != true {
+	if ps := a.paneTerms(testW, 42); !a.st.ShellFull || len(ps) != 1 || ps[0].key != shellID || loadState(statePath()).ShellFull != true {
 		t.Fatalf("F11: full %v panes %v", a.st.ShellFull, ps)
 	}
 	a.key(vaxis.Key{Keycode: vaxis.KeyF11})
 	a.cfg.Shell.Height = 30
-	if ps := a.paneTerms(42); a.st.ShellFull || len(ps) != 2 || ps[1].h != 12 {
+	if ps := a.paneTerms(testW, 42); a.st.ShellFull || len(ps) != 2 || ps[1].h != 12 {
 		t.Fatalf("F11 again: full %v panes %v", a.st.ShellFull, ps)
 	}
 	a.closeTerm("s1") // the session above ends: the shell fills the pane
-	if ps := a.paneTerms(42); a.active != shellID || a.low != shellID || len(ps) != 1 {
+	if ps := a.paneTerms(testW, 42); a.active != shellID || a.low != shellID || len(ps) != 1 {
 		t.Fatalf("session closed: active %q panes %v", a.active, ps)
 	}
 	a.show("s2") // another session: the shell moves under it
-	if ps := a.paneTerms(42); a.low != shellID || a.back != "s2" || len(ps) != 2 || ps[0].key != "s2" {
+	if ps := a.paneTerms(testW, 42); a.low != shellID || a.back != "s2" || len(ps) != 2 || ps[0].key != "s2" {
 		t.Fatalf("s2: low %q back %q panes %v", a.low, a.back, ps)
 	}
 	a.st.ShellFull = true
 	a.show("s1") // over a full-height shell: hides it
 	if a.low != "" {
 		t.Fatal("s1 should hide the full-height shell")
+	}
+}
+
+const testW = 200 // screen width the split tests lay the pane out on
+
+// stacked is the pane term key on rows y to y+h, as wide as the pane.
+func stacked(a *app, key string, y, h int) paneTerm {
+	x, end := a.paneSpan(testW)
+	return paneTerm{key, x, y, end - x, h}
+}
+
+// F6 puts the shell beside the session after a line, stacked on a narrow pane;
+// F11 on the session fills the pane with it; Alt+Shift+arrows and a drag on the line resize.
+func TestSideBySide(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}},
+		terms: map[string]*term.Model{"s1": term.New(), shellID: term.New()}, active: "s1", inTerm: true}
+	a.key(vaxis.Key{Keycode: vaxis.KeyF02})
+	a.key(vaxis.Key{Keycode: vaxis.KeyF06})
+	x, end := a.paneSpan(testW)
+	lw := (end - x - 1) / 2
+	if ps := a.paneTerms(testW, 42); !a.st.SplitCols || !loadState(statePath()).SplitCols || len(ps) != 2 ||
+		ps[0] != (paneTerm{"s1", x, 1, end - x - 1 - lw, 41}) || ps[1] != (paneTerm{shellID, end - lw, 1, lw, 41}) {
+		t.Fatalf("F6: %v", ps)
+	}
+	if p := a.paneTermAt(x, 30, testW, 42); p.key != "s1" || !a.onSplitLine(end-lw-1, 30, testW, 42) {
+		t.Fatalf("col %d: %q", x, p.key)
+	}
+	if ps := a.paneTerms(x+2*splitMinW, 42); len(ps) != 2 || ps[0].y == ps[1].y {
+		t.Fatalf("narrow pane should stack: %v", ps)
+	}
+	a.key(vaxis.Key{Keycode: vaxis.KeyLeft, Modifiers: vaxis.ModAlt | vaxis.ModShift})
+	if cfg, _, _ := parseConfig(configPath()); a.cfg.Shell.Height != 60 || cfg.Shell.Height != 60 {
+		t.Fatalf("Alt+Shift+Left: %d", a.cfg.Shell.Height)
+	}
+	a.dragging = true
+	a.dragSplit(end-1-(end-x-1)/4, 30, testW, 42)
+	if cfg, _, _ := parseConfig(configPath()); a.cfg.Shell.Height != 25 || cfg.Shell.Height != 60 {
+		t.Fatalf("drag: %d, saved %d", a.cfg.Shell.Height, cfg.Shell.Height)
+	}
+	a.dragging = false // the release saves
+	a.dragSplit(end-1-(end-x-1)/4, 30, testW, 42)
+	if cfg, _, _ := parseConfig(configPath()); cfg.Shell.Height != 25 {
+		t.Fatalf("release: saved %d", cfg.Shell.Height)
+	}
+	a.key(vaxis.Key{Keycode: vaxis.KeyUp, Modifiers: vaxis.ModAlt})
+	a.key(vaxis.Key{Keycode: vaxis.KeyF11})
+	if ps := a.paneTerms(testW, 42); !a.upFull || a.st.ShellFull || a.low != shellID || len(ps) != 1 || ps[0].key != "s1" {
+		t.Fatalf("F11 on the session: %v", ps)
+	}
+	a.key(vaxis.Key{Keycode: vaxis.KeyF11})
+	if ps := a.paneTerms(testW, 42); a.upFull || len(ps) != 2 || a.active != "s1" {
+		t.Fatalf("F11 again: %v", ps)
 	}
 }
 
@@ -252,7 +305,7 @@ func TestDiffSplit(t *testing.T) {
 	a.low, a.active = "", "s1"
 	a.diff = &diffView{dir: "/a", busy: true, back: true, focus: true}
 	a.setFocus(false)
-	if ps := a.paneTerms(42); len(ps) != 2 || ps[0] != (paneTerm{"s1", 1, 30}) || ps[1] != (paneTerm{diffID, 32, 10}) {
+	if ps := a.paneTerms(testW, 42); len(ps) != 2 || ps[0] != stacked(a, "s1", 1, 30) || ps[1] != stacked(a, diffID, 32, 10) {
 		t.Fatalf("split: %v", ps)
 	}
 	a.key(vaxis.Key{Keycode: 'j', Text: "j"})
@@ -269,7 +322,7 @@ func TestDiffSplit(t *testing.T) {
 	}
 	a.key(vaxis.Key{Keycode: vaxis.KeyDown, Modifiers: vaxis.ModAlt})
 	a.key(vaxis.Key{Keycode: vaxis.KeyF11})
-	if ps := a.paneTerms(42); !a.st.DiffFull || a.st.ShellFull || len(ps) != 1 || ps[0].key != diffID || !a.diff.focus {
+	if ps := a.paneTerms(testW, 42); !a.st.DiffFull || a.st.ShellFull || len(ps) != 1 || ps[0].key != diffID || !a.diff.focus {
 		t.Fatalf("F11: state %+v panes %v", a.st, ps)
 	}
 	a.key(vaxis.Key{Keycode: vaxis.KeyF11})
@@ -280,7 +333,7 @@ func TestDiffSplit(t *testing.T) {
 	}
 	a.closeTerm("s1")
 	a.diff = &diffView{dir: "/a", busy: true, focus: true} // no session: the diff fills the pane
-	if ps := a.paneTerms(42); len(ps) != 1 || ps[0].key != diffID {
+	if ps := a.paneTerms(testW, 42); len(ps) != 1 || ps[0].key != diffID {
 		t.Fatalf("no session: %v", ps)
 	}
 }
@@ -419,7 +472,7 @@ func TestEditorSplit(t *testing.T) {
 	a.cfg.Editor.Height = 75
 	f4 := vaxis.Key{Keycode: vaxis.KeyF04}
 	a.key(f4)
-	if ps := a.paneTerms(42); a.active != editorID || len(ps) != 2 || ps[0] != (paneTerm{"s1", 1, 10}) || ps[1] != (paneTerm{editorID, 12, 30}) {
+	if ps := a.paneTerms(testW, 42); a.active != editorID || len(ps) != 2 || ps[0] != stacked(a, "s1", 1, 10) || ps[1] != stacked(a, editorID, 12, 30) {
 		t.Fatalf("F4: active %q panes %v", a.active, ps)
 	}
 	a.attn = []string{"s1"}
@@ -433,12 +486,12 @@ func TestEditorSplit(t *testing.T) {
 	}
 	a.key(vaxis.Key{Keycode: vaxis.KeyDown, Modifiers: vaxis.ModAlt})
 	a.key(vaxis.Key{Keycode: vaxis.KeyF11})
-	if ps := a.paneTerms(42); !a.st.EditorFull || a.st.ShellFull || len(ps) != 1 || ps[0].key != editorID {
+	if ps := a.paneTerms(testW, 42); !a.st.EditorFull || a.st.ShellFull || len(ps) != 1 || ps[0].key != editorID {
 		t.Fatalf("F11: panes %v", ps)
 	}
 	a.key(vaxis.Key{Keycode: vaxis.KeyF11})
 	a.key(vaxis.Key{Keycode: vaxis.KeyF02}) // the shell takes the editor's place, under the same session
-	if ps := a.paneTerms(42); a.active != shellID || len(ps) != 2 || ps[0].key != "s1" || ps[1] != (paneTerm{shellID, 22, 20}) {
+	if ps := a.paneTerms(testW, 42); a.active != shellID || len(ps) != 2 || ps[0].key != "s1" || ps[1] != stacked(a, shellID, 22, 20) {
 		t.Fatalf("F2 over the editor: active %q panes %v", a.active, ps)
 	}
 	a.key(f4)

@@ -17,7 +17,7 @@ import (
 
 const (
 	appName  = "Cade"
-	version  = "0.1.13"
+	version  = "0.1.14"
 	appLabel = appName + " v" + version
 	sideDef  = 42            // sidebar width until resized; state.json keeps the resized one
 	sideMin  = 30            // narrowest sidebar, and narrowest pane beside it
@@ -46,7 +46,9 @@ const (
 	shellID   = "shell"  // the one app-wide shell in terms
 	editorID  = "editor" // the one app-wide editor in terms
 	diffID    = "diff"   // the F3 diff in paneTerms; it is not a term
+	colsKey   = "F6"
 	fullKey   = "F11"
+	splitMinW = 60 // columns each side needs for side by side; a narrower pane stacks them
 	splitMin  = 10 // shell.height and diff.height bounds and settings step, in % of the pane
 	splitMax  = 90
 	splitStep = 10
@@ -137,6 +139,8 @@ type app struct {
 	editDir  string   // project dir the editor was started in
 	grab     string   // term a left drag started in; it gets the drag until release
 	resizing bool     // a left drag started on the sidebar separator; it gets the drag until release
+	dragging bool     // a left drag started on the split line; it gets the drag until release
+	upFull   bool     // F11 on the session: it fills the pane, the diff, shell or editor open behind it; not remembered
 	inTerm   bool     // keyboard focus on the Claude pane
 	zoom     bool     // sidebar hidden while the pane or diff has focus; not remembered
 	attn     []string // sessions that rang for attention, oldest first
@@ -461,7 +465,7 @@ func (a *app) toggleEditor() {
 // paneTerms), in place of the other, starting cmd in the cursor's project dir,
 // noted in dir, if needed; when shown it hides it, still running.
 func (a *app) toggleLow(key string, cmd *exec.Cmd, dir *string) {
-	a.diff = nil
+	a.diff, a.upFull = nil, false
 	if a.low == key {
 		a.hideLow()
 		return
@@ -510,17 +514,40 @@ func (a *app) lowFull(key string) *bool {
 	return &a.st.ShellFull
 }
 
-// lowHeight is shell.height or editor.height, for key.
-func (a *app) lowHeight(key string) int {
-	if key == editorID {
-		return a.cfg.Editor.Height
+// splitSize is the size of the diff, shell or editor key in % of the pane
+// (diff.height, shell.height or editor.height) and its config.yaml section.
+func (a *app) splitSize(key string) (*int, string) {
+	switch key {
+	case diffID:
+		return &a.cfg.Diff.Height, "diff"
+	case editorID:
+		return &a.cfg.Editor.Height, "editor"
 	}
-	return a.cfg.Shell.Height
+	return &a.cfg.Shell.Height, "shell"
 }
 
-// toggleFull switches the diff, else the shell or editor, between full height
-// and split under the session, remembered, and focuses it.
+// resizeSplit grows (dir 1) or shrinks (dir -1) the diff, shell or editor split
+// with the session, saved to config.yaml.
+func (a *app) resizeSplit(dir int) {
+	key, _, _, _ := a.lower()
+	h, section := a.splitSize(key)
+	a.stepSplit(dir, h, section)
+}
+
+// toggleCols puts the diff, shell or editor beside the session or under it, remembered.
+func (a *app) toggleCols() {
+	a.st.SplitCols = !a.st.SplitCols
+	a.saveState()
+}
+
+// toggleFull makes the focused window fill the pane and back: the session, the
+// diff, shell or editor staying open behind it, or the diff, shell or editor,
+// remembered, which it focuses.
 func (a *app) toggleFull() {
+	if a.upFull || a.split() && !a.diffFocused() && a.active != a.low {
+		a.upFull = !a.upFull
+		return
+	}
 	if a.diff != nil {
 		a.st.DiffFull = !a.st.DiffFull
 		a.saveState()
@@ -604,7 +631,7 @@ func (a *app) closeTerm(id string) {
 			a.low = ""
 		}
 		if a.active == id {
-			a.active, a.inTerm = "", false
+			a.active, a.inTerm, a.upFull = "", false, false
 			switch {
 			case a.low != "": // the session above the shell or editor ended: it fills the pane
 				a.active = a.low
@@ -632,60 +659,110 @@ func (a *app) setFocus(inTerm bool) {
 // paneSize is the size of the focused term, or of the diff when it has focus.
 func (a *app) paneSize() (int, int) {
 	w, h := a.screen()
-	x, end := a.paneSpan(w)
-	key, ph := a.active, h-titleH
+	key := a.active
 	if a.diffFocused() {
 		key = diffID
 	}
-	for _, p := range a.paneTerms(h) {
-		if p.key == key {
-			ph = p.h
+	ps := a.paneTerms(w, h)
+	p := ps[0]
+	for _, q := range ps {
+		if q.key == key {
+			p = q
 		}
 	}
-	return max(end-x-barW, 1), max(ph, 1) // scrollbar
+	return max(p.w-barW, 1), max(p.h, 1) // scrollbar
 }
 
 // paneTerm is a term or the diff on screen: its key in terms or diffID, and its
-// first row and height under its title bar.
+// first column, first row under its title bar, width (scrollbar included) and height.
 type paneTerm struct {
-	key  string
-	y, h int
+	key        string
+	x, y, w, h int
 }
 
-// paneTerms lays out the pane on a screen h tall, top to bottom: the session and
-// the diff, shell or editor split under it, which takes diff.height, shell.height
-// or editor.height % of the rows; else the diff or the active term alone.
-func (a *app) paneTerms(h int) []paneTerm {
-	rows := h - 2*titleH
+// paneTerms lays out the pane on a screen w × h: the session, and the diff,
+// shell or editor split with it, which takes diff.height, shell.height or
+// editor.height % of the pane: beside it after a line (F6, see sideBySide), else
+// under it; else the diff or the active term alone.
+func (a *app) paneTerms(w, h int) []paneTerm {
+	x, end := a.paneSpan(w)
+	pw, rows := end-x, h-2*titleH
 	lower, upper, pct, _ := a.lower()
 	if !a.split() || rows < 2 {
-		if lower == diffID {
-			return []paneTerm{{diffID, titleH, h - titleH}}
+		if lower == diffID && !(a.upFull && a.terms[upper] != nil) {
+			return []paneTerm{{diffID, x, titleH, pw, h - titleH}}
 		}
-		return []paneTerm{{a.active, titleH, h - titleH}}
+		return []paneTerm{{a.active, x, titleH, pw, h - titleH}}
+	}
+	if a.st.SplitCols && sideBySide(pw) {
+		lw := min(max((pw-1)*pct/100, splitMinW), pw-1-splitMinW)
+		return []paneTerm{{upper, x, titleH, pw - 1 - lw, h - titleH}, {lower, end - lw, titleH, lw, h - titleH}}
 	}
 	sh := min(max(rows*pct/100, 1), rows-1)
-	return []paneTerm{{upper, titleH, rows - sh}, {lower, h - sh, sh}}
+	return []paneTerm{{upper, x, titleH, pw, rows - sh}, {lower, x, h - sh, pw, sh}}
 }
 
-// lower is what can split the pane under a session: the diff, else the shell or
-// editor when shown; upper is the session it goes under, pct its height and full
-// whether F11 made it fill the pane.
+// sideBySide reports whether a pane pw wide fits two terms splitMinW wide and the line between.
+func sideBySide(pw int) bool { return pw >= 2*splitMinW+1 }
+
+// lower is what can split the pane with a session: the diff, else the shell or
+// editor when shown; upper is that session, pct its size and full whether F11
+// made it fill the pane.
 func (a *app) lower() (key, upper string, pct int, full bool) {
 	switch {
 	case a.diff != nil:
-		return diffID, a.active, splitPct(a.cfg.Diff.Height), a.st.DiffFull
+		key, upper, full = diffID, a.active, a.st.DiffFull
 	case a.low != "":
-		return a.low, a.back, splitPct(a.lowHeight(a.low)), *a.lowFull(a.low)
+		key, upper, full = a.low, a.back, *a.lowFull(a.low)
+	default:
+		return "", "", 0, false
 	}
-	return "", "", 0, false
+	h, _ := a.splitSize(key)
+	return key, upper, splitPct(*h), full
 }
 
 // split reports whether the diff, shell or editor shares the pane with a session.
 func (a *app) split() bool {
 	key, upper, _, full := a.lower()
-	return key != "" && !full && a.terms[upper] != nil
+	return key != "" && !full && !a.upFull && a.terms[upper] != nil
 }
+
+// onSplitLine reports whether col, row of a screen w × h is on the line between
+// the session and the diff, shell or editor: the column between them side by
+// side, else the lower one's title bar.
+func (a *app) onSplitLine(col, row, w, h int) bool {
+	ps := a.paneTerms(w, h)
+	if !a.split() || len(ps) < 2 {
+		return false
+	}
+	lo := ps[1]
+	if lo.y == ps[0].y {
+		return col == lo.x-1 && row < h
+	}
+	return row == lo.y-titleH && col >= lo.x && col < lo.x+lo.w
+}
+
+// dragSplit moves the split line to col, row of a screen w × h, saving the size
+// to config.yaml once the drag ends.
+func (a *app) dragSplit(col, row, w, h int) {
+	key, _, _, _ := a.lower()
+	if key == "" {
+		a.dragging = false
+		return
+	}
+	size, section := a.splitSize(key)
+	pct := pctOf(h-1-row, h-2*titleH) // the lower one's title bar is on row
+	if x, end := a.paneSpan(w); a.st.SplitCols && sideBySide(end-x) {
+		pct = pctOf(end-1-col, end-x-1) // the line is on col
+	}
+	*size = min(max(pct, splitMin), splitMax)
+	if !a.dragging {
+		a.fail("save failed: ", saveConfig(configPath(), *size, section, "height"))
+	}
+}
+
+// pctOf is n in % of of, rounded.
+func pctOf(n, of int) int { return (n*100 + of/2) / max(of, 1) }
 
 func (a *app) lowerShown() bool  { return a.diff != nil || a.low != "" }
 func (a *app) diffFocused() bool { return a.diff != nil && a.diff.focus }

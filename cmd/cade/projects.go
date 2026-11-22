@@ -74,6 +74,7 @@ type state struct {
 	ShellFull    bool     `json:"shellFull"`        // F11: shell fills the pane; split under the session otherwise
 	DiffFull     bool     `json:"diffFull"`         // F11 in the diff, like ShellFull
 	EditorFull   bool     `json:"editorFull"`       // F11 in the editor, like ShellFull
+	SplitCols    bool     `json:"splitColumns"`     // F6: diff, shell or editor beside the session; under it otherwise
 	Recent       []string `json:"recent,omitempty"` // opened session IDs, latest first; the first gets the cursor at startup
 }
 

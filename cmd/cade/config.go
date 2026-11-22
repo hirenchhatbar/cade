@@ -40,7 +40,7 @@ type config struct {
 		Confirm *bool `yaml:"confirm"` // ask before quitting while sessions run. Default: true
 	} `yaml:"quit"`
 	Shell struct {
-		Height int `yaml:"height"` // % of the pane the F2 shell takes under the session, see splitMin. Default: 50
+		Height int `yaml:"height"` // % of the pane the F2 shell takes under the session, or beside it (F6), see splitMin. Default: 50
 	} `yaml:"shell"`
 	Editor struct {
 		Cmd    string `yaml:"cmd"`    // F4 editor, run by sh in the project dir. Default: $VISUAL, else $EDITOR, else vi

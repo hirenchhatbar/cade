@@ -51,6 +51,7 @@ func (a *app) openDiff() {
 		a.closeDiff()
 		return
 	}
+	a.upFull = false
 	if a.low != "" {
 		a.hideLow()
 	}
@@ -416,7 +417,7 @@ func truncRow(chars []vaxis.Character, w int) string {
 }
 
 // diffKey scrolls the focused diff and s switches unified ↔ side by side; Esc
-// or F3 closes it, F11 and Alt+↑ work as in the pane. Other keys are dropped, so
+// or F3 closes it, F6, F11, Alt+↑ and Alt+Shift+arrows work as in the pane. Other keys are dropped, so
 // nothing reaches Claude while the diff has focus. pager.Draw clamps the offset.
 func (a *app) diffKey(k vaxis.Key) {
 	pg := &a.diff.pg
@@ -424,8 +425,14 @@ func (a *app) diffKey(k vaxis.Key) {
 	switch {
 	case k.MatchString("Escape"), k.MatchString(diffKey):
 		a.closeDiff()
+	case k.MatchString(colsKey):
+		a.toggleCols()
 	case k.MatchString(fullKey):
 		a.toggleFull()
+	case (k.MatchString("Alt+Shift+Left") || k.MatchString("Alt+Shift+Up")) && a.split():
+		a.resizeSplit(1)
+	case (k.MatchString("Alt+Shift+Right") || k.MatchString("Alt+Shift+Down")) && a.split():
+		a.resizeSplit(-1)
 	case k.MatchString("Alt+Up") && a.split():
 		a.focusUpper()
 	case k.MatchString(zoomKey), k.MatchString(zoomAlt):

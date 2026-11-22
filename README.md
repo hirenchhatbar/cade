@@ -58,6 +58,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 
 ### Sidebar
 
+
 | Key | Action |
 |---|---|
 | `j/k` | move down / up (also ↓/↑) |
@@ -74,12 +75,14 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `g/G` | top / end |
 | `⇥` | go to Claude pane |
 | `-/+` | narrower / wider sidebar (or drag the line beside it), remembered |
-| `,` | settings: theme, status bar and its height, sidebar side and width, shell, diff and editor height, editor command, edit config.yaml in $EDITOR |
+| `,` | settings: theme, status bar and its height, sidebar side and width, shell, diff and editor size, editor command, edit config.yaml in $EDITOR |
 | `?` | this help |
 | `q` | quit (asks while sessions run) |
 | `S` | show / hide the status bar, remembered; its height in , settings |
 
+
 ### Claude pane
+
 
 | Key | Action |
 |---|---|
@@ -94,8 +97,10 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `Ctrl+⇧Q` | quit Cade, sidebar too (asks while sessions run) |
 | `^↑/^↓` | go to sidebar, cursor up / down, sidebar too |
 | `^⇧↑/^⇧↓` | go to sidebar, previous / next project, sidebar too |
-| `⌥↑/⌥↓` | with the diff, shell or editor split under the session: focus the session / the diff, shell or editor |
-| `F11` | diff, shell or editor full height ↔ split under the session, remembered; split heights in , settings |
+| `⌥↑/⌥↓` | with the diff, shell or editor split with the session: focus the session / the diff, shell or editor |
+| `⌥⇧←/→` | move the split line: ← / ↑ grows the diff, shell or editor, → / ↓ shrinks it, saved to config.yaml; or drag the line |
+| `F6` | diff, shell or editor beside ↔ under the session, remembered; under while the pane is under 121 columns |
+| `F11` | focused window fills the pane ↔ split: the session (diff, shell or editor stays open), or the diff, shell or editor (remembered); split sizes in , settings |
 | `Ctrl+R` | rename this session (goes to the sidebar) |
 | `Ctrl+D` | delete this session from disk (asks) |
 | `⇧PgUp/Dn` | scroll back / forward (PgUp/PgDn too) |
@@ -125,7 +130,7 @@ All files live in `~/.config/cade/` (`$XDG_CONFIG_HOME/cade/` if set; on macOS
 | File | Written by | Contents |
 |---|---|---|
 | `projects.json` | Cade | projects, their order and collapsed state, session titles and stars |
-| `state.json` | Cade | remembered UI state (status bar hidden, sidebar left or right and its width, diff side by side or unified, diff, shell and editor full or split, opened sessions latest first: cursor starts on last one) |
+| `state.json` | Cade | remembered UI state (status bar hidden, sidebar left or right and its width, diff side by side or unified, diff, shell and editor full or split, split beside or under, opened sessions latest first: cursor starts on last one) |
 | `config.yaml` | you (Cade writes only `theme`, `statusBar.height`, `quit.confirm`, `shell.height`, `diff.height`, `editor.cmd` and `editor.height`) | theme, diff, status bar, toasts, quit, shell, editor, Claude accounts |
 
 ### Themes
@@ -206,14 +211,24 @@ quit:
 
 `F2` opens the shell split under the session, so you can copy from Claude while typing in the
 shell: a drag in either half selects and copies, and keys go to the half that has focus.
-`⌥↑/⌥↓` move the focus between them. `F11` makes the shell full height and back; Cade
-remembers the choice. Some terminals keep `F11` for their own fullscreen; turn that off there.
-The shell takes 50% of the pane by default, from 10 to 90:
+`⌥↑/⌥↓` move the focus between them. `F11` makes the focused half fill the pane and back:
+on the shell Cade remembers the choice; on the session the shell stays open behind it until
+the next `F11`. Some terminals keep `F11` for their own fullscreen; turn that off there.
+The shell takes 50% of the pane by default, from 10 to 90 (`height` is the width side by side):
 
 ```yaml
 shell:
   height: 40
 ```
+
+### Split layout
+
+The diff, shell and editor split the pane with the session: under it by default. `F6` puts them
+beside it, after a line, and back; Cade remembers the choice in `state.json`. Side by side needs
+a pane at least 121 columns wide, 60 for each half; a narrower pane stacks them until it is wide
+enough. `⌥⇧←`/`⌥⇧↑` grow the diff, shell or editor by 10% and `⌥⇧→`/`⌥⇧↓` shrink it; dragging
+the line between them (side by side) or the lower title bar (stacked) sets any size. Both write
+`diff.height`, `shell.height` or `editor.height` to `config.yaml`.
 
 ### Editor
 `F4` runs one editor for the app, started in the cursor's project directory, split under the
@@ -229,8 +244,8 @@ editor:
   height: 70
 ```
 
-Keys go to the editor except Cade's own (`Ctrl+Esc`, `F2`–`F5`, `F11`, `F12`, `Ctrl+Z`,
-`Ctrl+⇧Q`, `^↑/^↓`, `^⇧↑/^⇧↓`); `Ctrl+F` stays with the editor. Quitting Cade closes
+Keys go to the editor except Cade's own (`Ctrl+Esc`, `F2`–`F6`, `F11`, `F12`, `Ctrl+Z`,
+`Ctrl+⇧Q`, `^↑/^↓`, `^⇧↑/^⇧↓`, `F6`, `⌥⇧` arrows); `Ctrl+F` stays with the editor. Quitting Cade closes
 the editor without saving.
 
 ### Settings dialog
@@ -242,7 +257,7 @@ the rest of the file, comments included, is kept (indentation is normalised to t
 "Status bar height" steps `statusBar.height` from auto (0) to 5 rows, written to `config.yaml` the same way.
 "Sidebar" puts the sessions sidebar on the left (default) or right; it is saved in `state.json`.
 "Sidebar width" steps the sidebar width by 2 columns (default 42, at least 30, leaving the pane at least 30); `-`/`+` in the sidebar and dragging the line between sidebar and pane do the same. It is saved in `state.json`.
-"Shell height", "Diff height" and "Editor height" step `shell.height`, `diff.height` and `editor.height` by 10%, written to `config.yaml` the same way.
+"Shell size", "Diff size" and "Editor size" step `shell.height`, `diff.height` and `editor.height` by 10%, written to `config.yaml` the same way.
 "Editor (F4)" edits `editor.cmd` as text: `⏎` saves it to `config.yaml` the same way (empty = `$VISUAL`, else `$EDITOR`), `Esc` cancels; a running editor keeps its old command.
 "Edit config.yaml" suspends Cade and opens the file in `$VISUAL`, else `$EDITOR`, else `vi`. On
 save Cade checks the file: a clean one takes effect at once (account changes apply to sessions

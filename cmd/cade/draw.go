@@ -363,29 +363,34 @@ func (a *app) drawPane(win vaxis.Window, w, h int) {
 		a.drawIdle(win.New(x, titleH, end-x, h-titleH))
 		return
 	}
-	pw, _ := a.paneSize()
-	ps := a.paneTerms(h)
+	ps := a.paneTerms(w, h)
+	if len(ps) == 2 && ps[0].y == ps[1].y { // side by side: the line between them
+		for r := range h {
+			win.SetCell(ps[1].x-1, r, cell("│", a.th.muted))
+		}
+	}
 	if ps[0].key == a.active { // each term's Draw shows its cursor, and the last one shown wins
 		slices.Reverse(ps)
 	}
 	for _, p := range ps {
 		right := ""
-		if p.y == titleH {
+		if p.y == titleH && p.x+p.w == end {
 			right = waiting
 		}
-		title := win.New(x, p.y-titleH, end-x, titleH)
+		title := win.New(p.x, p.y-titleH, p.w, titleH)
 		if p.key == diffID {
 			a.titleBar(title, " DIFF › "+a.diff.name, right, a.diff.focus)
-			a.drawDiff(win.New(x, p.y, end-x, p.h))
+			a.drawDiff(win.New(p.x, p.y, p.w, p.h))
 			continue
 		}
 		t := a.terms[p.key]
 		on := a.inTerm && p.key == a.active
 		a.titleBar(title, " "+a.titleOf(p.key), right, on)
-		t.Resize(pw, p.h)
-		t.Draw(win.New(x, p.y, pw, p.h))
+		tw := max(p.w-barW, 1) // scrollbar
+		t.Resize(tw, p.h)
+		t.Draw(win.New(p.x, p.y, tw, p.h))
 		if off, m := t.ScrollInfo(); m > 0 {
-			a.scrollbar(win, end-barW, barW, p.y, p.h, off, m, on || a.hover == paneBar)
+			a.scrollbar(win, p.x+p.w-barW, barW, p.y, p.h, off, m, on || a.hover == paneBar)
 		}
 	}
 	if !a.inTerm {
@@ -767,9 +772,9 @@ func (a *app) drawSettings(win vaxis.Window) {
 		setBarH:    {"Status bar height", barH},
 		setSide:    {"Sidebar", side},
 		setSideW:   {"Sidebar width", fmt.Sprintf("‹ %d ›", a.sideW())},
-		setShell:   {"Shell height", fmt.Sprintf("‹ %d%% ›", splitPct(a.cfg.Shell.Height))},
-		setDiff:    {"Diff height", fmt.Sprintf("‹ %d%% ›", splitPct(a.cfg.Diff.Height))},
-		setEditorH: {"Editor height", fmt.Sprintf("‹ %d%% ›", splitPct(a.cfg.Editor.Height))},
+		setShell:   {"Shell size", fmt.Sprintf("‹ %d%% ›", splitPct(a.cfg.Shell.Height))},
+		setDiff:    {"Diff size", fmt.Sprintf("‹ %d%% ›", splitPct(a.cfg.Diff.Height))},
+		setEditorH: {"Editor size", fmt.Sprintf("‹ %d%% ›", splitPct(a.cfg.Editor.Height))},
 		setQuit:    {"Confirm quit", quit},
 		setEditor:  {"Editor (" + editorKey + ")", editor},
 		setEdit:    {"Edit config.yaml", "in " + envEditor() + ", checked on save"},
