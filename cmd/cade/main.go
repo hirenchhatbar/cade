@@ -17,7 +17,7 @@ import (
 
 const (
 	appName  = "Cade"
-	version  = "0.1.14"
+	version  = "0.1.15"
 	appLabel = appName + " v" + version
 	sideDef  = 42            // sidebar width until resized; state.json keeps the resized one
 	sideMin  = 30            // narrowest sidebar, and narrowest pane beside it
@@ -206,6 +206,9 @@ func main() {
 	var themeErr error
 	a.th, themeErr = loadTheme(cfg)
 	a.fail("", themeErr)
+	if fillColors(a.projects) {
+		a.save()
+	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(configPath()), "config.json")); err == nil {
 		a.notify(toastWarn, "config.json is no longer read: rename it to config.yaml")
 	}
@@ -381,7 +384,10 @@ func (a *app) fail(prefix string, err error) {
 	}
 }
 
-func (a *app) save() { a.fail("save failed: ", saveProjects(a.cfgPath, a.projects)) }
+func (a *app) save() {
+	fillColors(a.projects)
+	a.fail("save failed: ", saveProjects(a.cfgPath, a.projects))
+}
 
 // open switches to the selected session's terminal, starting claude if needed.
 // On a header or new-session row it starts a new session in that project.

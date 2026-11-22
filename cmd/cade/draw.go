@@ -314,7 +314,7 @@ func (a *app) drawRow(win vaxis.Window, y int, r row, selected bool, cw int) {
 		if p.Collapsed {
 			arrow = " ▸ "
 		}
-		name := th.project
+		name := th.projectStyle(p)
 		name.Attribute |= vaxis.AttrBold
 		waiting := ""
 		if n := a.waiting(p); p.Collapsed && n > 0 {
@@ -346,7 +346,7 @@ func (a *app) drawRow(win vaxis.Window, y int, r row, selected bool, cw int) {
 	}
 	room := cw - runeLen(branch+mark+star)
 	win.PrintTruncate(y,
-		vaxis.Segment{Text: branch, Style: hl(th.muted)},
+		vaxis.Segment{Text: branch, Style: hl(th.projectStyle(p))},
 		vaxis.Segment{Text: mark, Style: hl(markStyle)},
 		vaxis.Segment{Text: star, Style: hl(th.key)},
 		vaxis.Segment{Text: pad(truncate(label, room), room), Style: hl(labelStyle)})

@@ -59,6 +59,9 @@ var sidebarKeys = []binding{
 	{keys: []string{"Shift+Page_Down"}, run: func(a *app) { a.moveSaved(1) }},
 	{label: "r", keys: []string{"r"}, hint: "rename", help: "rename session (empty = Claude's title, ^T generates one)",
 		run: (*app).openRename},
+	{label: "c/C", keys: []string{"c"}, hint: "color", help: "turn this project's color (name and tree lines) round the wheel / back to its auto pick, kept",
+		run: func(a *app) { a.recolor(func(p *project) { stepHue(p, 1) }) }},
+	{keys: []string{"C"}, run: func(a *app) { a.recolor(func(p *project) { p.Color = "" }) }},
 	{label: "s/*", keys: []string{"s", "*"}, hint: "star", help: "star / unstar session; starred go first (click ★ too)",
 		run: (*app).toggleStar},
 	{label: "d/dd", keys: []string{"d"}, hint: "delete",
@@ -759,6 +762,15 @@ func (a *app) showTitle(ev titleEvent) {
 	default:
 		rn.title = ev.title
 	}
+}
+
+// recolor changes the cursor's project color; save picks a new one if set empty.
+func (a *app) recolor(f func(*project)) {
+	if len(a.projects) == 0 {
+		return
+	}
+	f(a.projects[a.current().p])
+	a.save()
 }
 
 func (a *app) toggleStar() {

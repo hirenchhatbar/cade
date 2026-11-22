@@ -51,6 +51,9 @@ On first start Cade adds the directory you launched it from as a project. Add mo
 Sessions are read from `~/.claude/projects` and refreshed every 2 seconds. A session's title is the
 one set in Cade with `r` (`Ctrl+T` in that dialog asks Claude for one from the first prompts), else its `/rename` name, else its agent name, else Claude's AI title,
 else its first prompt. Starred sessions (`s`, `*` or a click on the ★ column) stay at the top of their project.
+Each project gets its own colour for its name and tree lines. Cade picks it once, the colour farthest from
+the other projects' colours, and keeps it in `projects.json`. About 50 projects stay apart. `c` turns
+the colour round the wheel; `C` picks it again.
 
 Press `?` for the shortcut dialog. `cade --help` lists the command-line options.
 
@@ -70,6 +73,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `a` | add project (name, then directory; ⇥ opens a match) |
 | `⇧PgUp/Dn` | move project up / down |
 | `r` | rename session (empty = Claude's title, ^T generates one) |
+| `c/C` | turn this project's color (name and tree lines) round the wheel / back to its auto pick, kept |
 | `s/*` | star / unstar session; starred go first (click ★ too) |
 | `d/dd` | d: delete session from disk · dd: remove project from list (both ask) |
 | `g/G` | top / end |
@@ -129,7 +133,7 @@ All files live in `~/.config/cade/` (`$XDG_CONFIG_HOME/cade/` if set; on macOS
 
 | File | Written by | Contents |
 |---|---|---|
-| `projects.json` | Cade | projects, their order and collapsed state, session titles and stars |
+| `projects.json` | Cade | projects, their order, collapsed state and colour (`#rrggbb`, hand-editable), session titles and stars |
 | `state.json` | Cade | remembered UI state (status bar hidden, sidebar left or right and its width, diff side by side or unified, diff, shell and editor full or split, split beside or under, opened sessions latest first: cursor starts on last one) |
 | `config.yaml` | you (Cade writes only `theme`, `statusBar.height`, `quit.confirm`, `shell.height`, `diff.height`, `editor.cmd` and `editor.height`) | theme, diff, status bar, toasts, quit, shell, editor, Claude accounts |
 
