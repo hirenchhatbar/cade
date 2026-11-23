@@ -31,9 +31,7 @@ func TestProjectColors(t *testing.T) {
 	var ps []*project
 	for i := range 50 {
 		ps = append(ps, &project{Dir: fmt.Sprintf("/p%d", i)})
-		if !fillColors(ps) || fillColors(ps) {
-			t.Fatal("fillColors should fill once, then report no change")
-		}
+		stepHue(ps[i], ps, 1) // no color yet: picks the one farthest from the others
 	}
 	first := ps[0].Color
 	minD := math.Inf(1)
@@ -53,7 +51,7 @@ func TestProjectColors(t *testing.T) {
 	}
 	p := ps[0]
 	for range int(360 / hueStep) {
-		stepHue(p, 1)
+		stepHue(p, ps, 1)
 	}
 	a, _ := hexLab(first)
 	if b, _ := hexLab(p.Color); a.dist(b) > 0.01 {

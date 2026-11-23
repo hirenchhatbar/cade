@@ -13,7 +13,7 @@ type project struct {
 	Name      string            `json:"name"`
 	Dir       string            `json:"dir"`
 	Collapsed bool              `json:"collapsed,omitempty"`
-	Color     string            `json:"color,omitempty"`   // "#rrggbb"; picked once when empty (fillColors), then fixed
+	Color     string            `json:"color,omitempty"`   // "#rrggbb" set with c; "" = the theme's project color
 	Titles    map[string]string `json:"titles,omitempty"`  // session ID -> title set in cade, wins over Claude's
 	Starred   []string          `json:"starred,omitempty"` // starred session IDs, listed first
 	sessions  []session         // loaded from ~/.claude/projects, not persisted

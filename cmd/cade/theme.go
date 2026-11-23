@@ -268,23 +268,13 @@ func pickColor(p *project, ps []*project) string {
 	return best
 }
 
-// fillColors picks a color for each project without one; it reports whether any changed.
-func fillColors(ps []*project) bool {
-	changed := false
-	for _, p := range ps {
-		if p.Color == "" {
-			p.Color, changed = pickColor(p, ps), true
-		}
-	}
-	return changed
-}
-
-// stepHue turns p's color hueStep degrees round the wheel (dir 1 or -1),
-// on the nearer lightness ring.
-func stepHue(p *project, dir int) {
+// stepHue turns p's color hueStep degrees round the wheel (dir 1 or -1), on
+// the nearer lightness ring. A project without a color gets the one farthest
+// from the colors in ps.
+func stepHue(p *project, ps []*project, dir int) {
 	c, ok := hexLab(p.Color)
 	if !ok {
-		p.Color = pickColor(p, nil)
+		p.Color = pickColor(p, ps)
 		return
 	}
 	ring := projRings[0]
