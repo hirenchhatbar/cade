@@ -56,7 +56,7 @@ var sidebarKeys = []binding{
 	{label: "⇧PgUp/Dn", keys: []string{"Shift+Page_Up"}, hint: "reorder", help: "move project up / down",
 		run: func(a *app) { a.moveSaved(-1) }},
 	{keys: []string{"Shift+Page_Down"}, run: func(a *app) { a.moveSaved(1) }},
-	{label: "r", keys: []string{"r"}, hint: "rename", help: "rename session (empty = Claude's title, ^T generates one)",
+	{label: "r", keys: []string{"r"}, hint: "rename", help: "rename session (empty = Claude's title, ^T generates one) or project (empty = folder name)",
 		run: (*app).openRename},
 	{label: "c/C", keys: []string{"c"}, hint: "color", help: "color this project (name and tree lines), again turns it round the wheel / back to the theme's, kept",
 		run: func(a *app) { a.recolor(func(p *project) { stepHue(p, a.projects, 1) }) }},
@@ -649,11 +649,7 @@ func (a *app) promptKey(k vaxis.Key) {
 			in.err = err.Error()
 			return
 		}
-		name := strings.TrimSpace(in.name)
-		if name == "" {
-			name = filepath.Base(dir)
-		}
-		a.projects = append(a.projects, &project{Name: name, Dir: dir})
+		a.projects = append(a.projects, &project{Name: projectName(in.name, dir), Dir: dir})
 		a.input = nil
 		a.save()
 		a.refresh()
@@ -694,8 +690,12 @@ func (a *app) savedSession() (*project, session, bool) {
 	return p, s, true
 }
 
+// openRename opens the rename dialog for the cursor's project or session.
 func (a *app) openRename() {
-	if p, s, ok := a.savedSession(); ok {
+	if cur := a.current(); cur.s == rowHeader {
+		p := a.projects[cur.p]
+		a.rename = &renaming{p: p, title: p.Name}
+	} else if p, s, ok := a.savedSession(); ok {
 		a.rename = &renaming{p: p, id: s.ID, title: s.Title}
 	}
 }
@@ -708,9 +708,12 @@ func (a *app) renameKey(k vaxis.Key) {
 		a.rename = nil
 	case k.MatchString("Enter"):
 		a.rename = nil
-		if t := strings.TrimSpace(rn.title); t == "" {
+		switch t := strings.TrimSpace(rn.title); {
+		case rn.id == "":
+			rn.p.Name = projectName(t, rn.p.Dir)
+		case t == "":
 			delete(rn.p.Titles, rn.id)
-		} else {
+		default:
 			if rn.p.Titles == nil {
 				rn.p.Titles = map[string]string{}
 			}
@@ -719,7 +722,9 @@ func (a *app) renameKey(k vaxis.Key) {
 		a.save()
 		a.refresh()
 	case k.MatchString("Ctrl+t"):
-		a.genTitle()
+		if rn.id != "" {
+			a.genTitle()
+		}
 	default:
 		typeKey(&rn.title, k)
 	}

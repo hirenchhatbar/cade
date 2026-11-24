@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -549,6 +550,27 @@ func TestShowTitle(t *testing.T) {
 	}
 	a.rename = nil
 	a.showTitle(titleEvent{id: "a", title: "late"}) // dialog closed: no panic
+}
+
+// r on a project row renames the project; an empty name falls back to the folder's.
+func TestRenameProject(t *testing.T) {
+	tmp := t.TempDir()
+	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/x/proj"}}}, cfgPath: filepath.Join(tmp, "projects.json"), home: tmp}
+	a.openRename()
+	if a.rename == nil || a.rename.id != "" || a.rename.title != "a" {
+		t.Fatalf("dialog: %+v", a.rename)
+	}
+	a.rename.title = "  New name "
+	a.renameKey(vaxis.Key{Keycode: vaxis.KeyEnter})
+	if a.rename != nil || a.projects[0].Name != "New name" {
+		t.Fatalf("name = %q, dialog %+v", a.projects[0].Name, a.rename)
+	}
+	a.openRename()
+	a.rename.title = ""
+	a.renameKey(vaxis.Key{Keycode: vaxis.KeyEnter})
+	if a.projects[0].Name != "proj" {
+		t.Fatalf("empty name = %q", a.projects[0].Name)
+	}
 }
 
 // Opening sessions builds the history in state.json; Ctrl+Tab moves the cursor

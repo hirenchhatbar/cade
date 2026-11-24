@@ -17,7 +17,7 @@ import (
 
 const (
 	appName  = "Cade"
-	version  = "0.1.18"
+	version  = "0.1.19"
 	appLabel = appName + " v" + version
 	sideDef  = 42            // sidebar width until resized; state.json keeps the resized one
 	sideMin  = 30            // narrowest sidebar, and narrowest pane beside it
@@ -100,7 +100,7 @@ type searching struct {
 // renaming is the rename-session dialog.
 type renaming struct {
 	p     *project
-	id    string
+	id    string // session ID; "" renames the project
 	title string
 	busy  bool // Ctrl+T: claude is generating a title
 }

@@ -42,6 +42,14 @@ func (p *project) forget(id string) {
 	p.Starred = slices.DeleteFunc(p.Starred, func(s string) bool { return s == id })
 }
 
+// projectName is the trimmed name, or the folder's name when it is empty.
+func projectName(name, dir string) string {
+	if name = strings.TrimSpace(name); name != "" {
+		return name
+	}
+	return filepath.Base(dir)
+}
+
 func projectsPath() string {
 	dir, err := os.UserConfigDir()
 	if err != nil {

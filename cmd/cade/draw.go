@@ -602,26 +602,33 @@ func (a *app) addHint() string {
 	return "[⇥] open  [↑↓] pick  [⇧⇥] name  [⏎] add  [Alt+h] " + tick + " hidden  [Esc] cancel"
 }
 
-// drawRename overlays the rename-session dialog.
+// drawRename overlays the rename dialog of a session or project.
 func (a *app) drawRename(win vaxis.Window) {
 	rn := a.rename
 	if rn == nil {
 		return
 	}
 	th := a.th
-	box, on := a.dialog(win, " RENAME SESSION", 84, titleH+4)
+	head, label, hint := " RENAME SESSION", " Title: ", renameHint
+	if rn.id == "" {
+		head, label, hint = " RENAME PROJECT", " Name: ", renameProjectHint
+	}
+	box, on := a.dialog(win, head, 84, titleH+4)
 	bw, bh := box.Size()
 	box.PrintTruncate(titleH+1,
-		vaxis.Segment{Text: " Title: ", Style: on(th.key)},
-		vaxis.Segment{Text: truncateLeft(rn.title, bw-10), Style: on(th.base)},
+		vaxis.Segment{Text: label, Style: on(th.key)},
+		vaxis.Segment{Text: truncateLeft(rn.title, bw-runeLen(label)-2), Style: on(th.base)},
 		vaxis.Segment{Text: "▏", Style: on(th.key)})
 	if rn.busy {
 		box.PrintTruncate(bh-2, vaxis.Segment{Text: " generating title…", Style: on(th.muted)})
 	}
-	a.dialogKeys(box, renameHint)
+	a.dialogKeys(box, hint)
 }
 
-const renameHint = "[⏎] save (empty = Claude's title)  [^T] generate  [Esc] cancel"
+const (
+	renameHint        = "[⏎] save (empty = Claude's title)  [^T] generate  [Esc] cancel"
+	renameProjectHint = "[⏎] save (empty = folder name)  [Esc] cancel"
+)
 
 // drawConfirm overlays the pending yes/no question with what it touches.
 func (a *app) drawConfirm(win vaxis.Window) {

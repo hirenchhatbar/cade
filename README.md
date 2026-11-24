@@ -72,7 +72,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `←/→` | collapse / expand project (→ on a session opens it) |
 | `a` | add project (name, then directory; ⇥ opens a match) |
 | `⇧PgUp/Dn` | move project up / down |
-| `r` | rename session (empty = Claude's title, ^T generates one) |
+| `r` | rename session (empty = Claude's title, ^T generates one) or project (empty = folder name) |
 | `c/C` | color this project (name and tree lines), again turns it round the wheel / back to the theme's, kept |
 | `s/*` | star / unstar session; starred go first (click ★ too) |
 | `d/dd` | d: delete session from disk · dd: remove project from list (both ask) |
