@@ -5,6 +5,7 @@
 | Language | Go 1.27.3, module `cade` |
 | TUI | [vaxis](https://go.rockorager.dev/vaxis) v0.17.1, vendored fork in `third_party/vaxis` via `replace` in `go.mod` |
 | Config | `gopkg.in/yaml.v3` for `config.yaml` |
+| Session server | `cade --serve`: unix socket in `$XDG_RUNTIME_DIR`, `encoding/gob` messages, headless vaxis `term.Model` per session |
 | Tests | Go `testing` (`make test`) |
 | Dev environment | Docker Compose service `go`, image target `dev` (`golang:1.27.3`), run as host user |
 | Build | `make build`: static binary `bin/cade` (`CGO_ENABLED=0`) |

@@ -161,10 +161,7 @@ func (vt *Model) osc(data string) {
 		if err != nil {
 			return
 		}
-		if vt.vx == nil {
-			return
-		}
-		vt.vx.ClipboardPush(string(decodedBytes))
+		vt.clipboardPush(string(decodedBytes))
 	case "66":
 		// Ghostty parses Kitty text sizing, but currently treats it as an
 		// unimplemented OSC callback.
@@ -214,11 +211,21 @@ func (vt *Model) osc1337(val string) {
 			return
 		}
 		decodedBytes, err := base64.StdEncoding.DecodeString(data)
-		if err != nil || vt.vx == nil {
+		if err != nil {
 			return
 		}
-		vt.vx.ClipboardPush(string(decodedBytes))
+		vt.clipboardPush(string(decodedBytes))
 	}
+}
+
+// clipboardPush copies s to the host clipboard; without a Vaxis (a headless
+// model) it posts EventClipboard for the owner to deliver.
+func (vt *Model) clipboardPush(s string) {
+	if vt.vx == nil {
+		vt.postEvent(EventClipboard(s))
+		return
+	}
+	vt.vx.ClipboardPush(s)
 }
 
 type semanticContent uint8

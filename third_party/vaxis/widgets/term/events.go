@@ -14,6 +14,9 @@ type EventClosed struct {
 
 type EventTitle string
 
+// EventClipboard is text an application copied (OSC 52) on a model with no Vaxis.
+type EventClipboard string
+
 type EventNotify struct {
 	Title string
 	Body  string

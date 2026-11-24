@@ -17,7 +17,7 @@ import (
 
 const (
 	appName  = "Cade"
-	version  = "0.1.16"
+	version  = "0.1.17"
 	appLabel = appName + " v" + version
 	sideDef  = 42            // sidebar width until resized; state.json keeps the resized one
 	sideMin  = 30            // narrowest sidebar, and narrowest pane beside it
@@ -61,9 +61,11 @@ const (
 
 type refreshEvent struct{}
 
-// termEvent is an event from the terminal of session id, so bells can be told apart.
+// termEvent is an event from terminal t, terms[id] when it was made, so bells
+// can be told apart and a stale close is dropped.
 type termEvent struct {
 	id string
+	t  pane
 	ev vaxis.Event
 }
 
@@ -73,7 +75,7 @@ type dTimeout struct{ seq int }
 // clearSel fires a moment after a copy; seq drops it if the user clicked again since.
 // A nil t is the diff.
 type clearSel struct {
-	t   *term.Model
+	t   pane
 	seq int
 }
 
@@ -131,36 +133,37 @@ type app struct {
 	th       theme
 	st       state           // remembered UI state
 	pending  map[string]bool // started from cade, jsonl may not exist yet
-	terms    map[string]*term.Model
-	active   string   // key into terms
-	back     string   // pane shown before the shell, which F2 returns to
-	shellDir string   // project dir the shell was started in
-	low      string   // shellID or editorID on screen, under terms[back] when split, see paneTerms; "" none
-	editDir  string   // project dir the editor was started in
-	grab     string   // term a left drag started in; it gets the drag until release
-	resizing bool     // a left drag started on the sidebar separator; it gets the drag until release
-	dragging bool     // a left drag started on the split line; it gets the drag until release
-	upFull   bool     // F11 on the session: it fills the pane, the diff, shell or editor open behind it; not remembered
-	inTerm   bool     // keyboard focus on the Claude pane
-	zoom     bool     // sidebar hidden while the pane or diff has focus; not remembered
-	attn     []string // sessions that rang for attention, oldest first
+	terms    map[string]pane // Claude sessions are remoteTerms; the shell and editor run here
+	active   string          // key into terms
+	back     string          // pane shown before the shell, which F2 returns to
+	shellDir string          // project dir the shell was started in
+	low      string          // shellID or editorID on screen, under terms[back] when split, see paneTerms; "" none
+	editDir  string          // project dir the editor was started in
+	grab     string          // term a left drag started in; it gets the drag until release
+	resizing bool            // a left drag started on the sidebar separator; it gets the drag until release
+	dragging bool            // a left drag started on the split line; it gets the drag until release
+	upFull   bool            // F11 on the session: it fills the pane, the diff, shell or editor open behind it; not remembered
+	inTerm   bool            // keyboard focus on the Claude pane
+	zoom     bool            // sidebar hidden while the pane or diff has focus; not remembered
+	attn     []string        // sessions that rang for attention, oldest first
 
 	// transient UI state
-	input    *prompt       // non-nil while adding a project
-	rename   *renaming     // non-nil while renaming a session
-	search   *searching    // non-nil while searching sessions
-	confirm  *confirmation // non-nil while asking yes/no
-	set      *settings     // non-nil while the settings dialog is open
-	diff     *diffView     // non-nil while the git diff covers the pane
-	help     bool          // shortcut dialog open
-	toasts   []toast       // oldest first, see notify
-	toastSeq int
-	dWait    bool // a first d was pressed, see ddWindow
-	dSeq     int
-	selSeq   int  // bumped on every pane click, see clearSel
-	pasting  bool // inside a bracketed paste; drawing waits for its end
-	hover    bar  // scrollbar under the mouse pointer
-	quit     bool
+	input     *prompt       // non-nil while adding a project
+	rename    *renaming     // non-nil while renaming a session
+	search    *searching    // non-nil while searching sessions
+	confirm   *confirmation // non-nil while asking yes/no
+	set       *settings     // non-nil while the settings dialog is open
+	diff      *diffView     // non-nil while the git diff covers the pane
+	help      bool          // shortcut dialog open
+	toasts    []toast       // oldest first, see notify
+	toastSeq  int
+	dWait     bool // a first d was pressed, see ddWindow
+	dSeq      int
+	selSeq    int  // bumped on every pane click, see clearSel
+	pasting   bool // inside a bracketed paste; drawing waits for its end
+	hover     bar  // scrollbar under the mouse pointer
+	quit      bool
+	verWarned bool // told the session server runs another version
 }
 
 // bar names a scrollbar.
@@ -202,7 +205,7 @@ func main() {
 		os.Exit(1)
 	}
 	a := &app{tree: tree{projects: projects}, vx: vx, home: home, cwd: cwd, cfgPath: cfgPath, cfg: cfg,
-		st: loadState(statePath()), pending: map[string]bool{}, terms: map[string]*term.Model{}}
+		st: loadState(statePath()), pending: map[string]bool{}, terms: map[string]pane{}}
 	var themeErr error
 	a.th, themeErr = loadTheme(cfg)
 	a.fail("", themeErr)
@@ -223,9 +226,12 @@ func main() {
 			vx.PostEvent(refreshEvent{})
 		}
 	}()
+	a.attachRunning()
 	defer func() {
-		for _, t := range a.terms {
-			t.Close()
+		for _, id := range []string{shellID, editorID} { // Claude sessions keep running in the server
+			if t := a.terms[id]; t != nil {
+				t.Close()
+			}
 		}
 		vx.Close()
 	}()
@@ -246,6 +252,8 @@ func cli(args []string, out, errOut io.Writer) int {
 			return 1
 		}
 		fmt.Fprintf(out, "%s: ok\n", configPath())
+	case "-s", "--serve":
+		return serve()
 	case "-k", "--keys":
 		fmt.Fprint(out, keysMarkdown())
 	case "-v", "--version":
@@ -279,6 +287,8 @@ all shortcuts.
 Options:
   -h, --help     show this help
   -c, --check    list problems in config.yaml
+  -s, --serve    run the session server in the foreground; Cade starts it
+                 when needed, and Claude sessions keep running in it after Cade quits
   -k, --keys     print all keyboard shortcuts as Markdown
   -v, --version  print the version
 
@@ -322,6 +332,7 @@ func (a *app) handle(ev vaxis.Event) bool {
 	case vaxis.Mouse:
 		a.mouse(ev)
 	case refreshEvent:
+		a.attachRunning()
 		a.refresh()
 		if a.diff != nil {
 			a.loadDiff()
@@ -347,6 +358,15 @@ func (a *app) handle(ev vaxis.Event) bool {
 		}
 	case termEvent:
 		switch e := ev.ev.(type) {
+		case term.EventClosed:
+			if a.terms[ev.id] == ev.t { // not a new term under the same key
+				a.closeTerm(ev.id)
+				delete(a.pending, ev.id)
+			}
+		case term.EventClipboard:
+			a.vx.ClipboardPush(string(e))
+		case copied:
+			a.copySel(ev.t, string(e))
 		case term.EventBell, term.EventNotify:
 			if a.inTerm && ev.id == a.active {
 				if n, ok := e.(term.EventNotify); ok {
@@ -358,13 +378,6 @@ func (a *app) handle(ev vaxis.Event) bool {
 			}
 		default:
 			return a.handle(e)
-		}
-	case term.EventClosed:
-		for id, t := range a.terms {
-			if t == ev.Term {
-				a.closeTerm(id)
-				delete(a.pending, id)
-			}
 		}
 	case term.EventTitle:
 		a.vx.SetTitle(string(ev))
@@ -403,10 +416,9 @@ func (a *app) open() {
 	}
 	args = append(args, "--settings", notifSettings)
 	if _, ok := a.terms[key]; !ok {
-		t := a.newTerm(key)
-		cmd := a.account(p).cmd(a.home, p.Dir, args...)
 		w, h := a.paneSize()
-		if err := t.StartWithSize(cmd, w, h); err != nil {
+		t, err := openRemote(key, a.account(p).cmd(a.home, p.Dir, args...), w, h, a.postTerm(key))
+		if err != nil {
 			a.fail("claude: ", err)
 			return
 		}
@@ -423,14 +435,36 @@ func (a *app) open() {
 	}
 }
 
-// newTerm makes the terminal for terms[key], its events posted to the loop.
+// newTerm makes the local terminal for terms[key], its events posted to the loop.
 func (a *app) newTerm(key string) *term.Model {
-	t := term.New(term.WithVaxis(a.vx))
-	// WithVaxis picks xterm-kitty on a kitty-protocol host, but that terminfo is
-	// often not installed: zsh then drops its key bindings and redraws by reprinting
-	t.TERM = "xterm-256color"
-	t.Attach(func(ev vaxis.Event) { a.vx.PostEvent(termEvent{key, ev}) })
+	t := newModel(term.WithVaxis(a.vx))
+	post := a.postTerm(key)
+	t.Attach(func(ev vaxis.Event) { post(t, ev) })
 	return t
+}
+
+// postTerm posts the events of terms[key] to the loop.
+func (a *app) postTerm(key string) func(pane, vaxis.Event) {
+	return func(t pane, ev vaxis.Event) { a.vx.PostEvent(termEvent{key, t, ev}) }
+}
+
+// attachRunning shows the sessions the server runs that cade has no pane for:
+// at start, and ones another cade started since.
+func (a *app) attachRunning() {
+	ids, ver := running()
+	if ver != "" && ver != version && !a.verWarned {
+		a.verWarned = true
+		a.notify(toastWarn, "Session server is v"+ver+": restart it to run v"+version+" (ends its sessions)")
+	}
+	for _, id := range ids {
+		if a.terms[id] != nil {
+			continue
+		}
+		w, h := a.paneSize()
+		if t, err := openRemote(id, nil, w, h, a.postTerm(id)); err == nil {
+			a.terms[id] = t
+		}
+	}
 }
 
 // show puts terms[key] in the pane and focuses it; a split shell or editor moves

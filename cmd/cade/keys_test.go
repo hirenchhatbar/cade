@@ -167,7 +167,7 @@ func TestAttention(t *testing.T) {
 // F2 puts the app's shell over the session pane, and F2 again goes back.
 func TestShellToggle(t *testing.T) {
 	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}},
-		terms: map[string]*term.Model{"s1": term.New(), shellID: term.New()}, active: "s1", inTerm: true}
+		terms: map[string]pane{"s1": term.New(), shellID: term.New()}, active: "s1", inTerm: true}
 	f2 := vaxis.Key{Keycode: vaxis.KeyF02}
 	a.key(f2)
 	if a.active != shellID || !a.inTerm {
@@ -195,7 +195,7 @@ func TestShellToggle(t *testing.T) {
 func TestShellSplit(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}, {ID: "s2"}}}}},
-		terms: map[string]*term.Model{"s1": term.New(), "s2": term.New(), shellID: term.New()}, active: "s1", inTerm: true}
+		terms: map[string]pane{"s1": term.New(), "s2": term.New(), shellID: term.New()}, active: "s1", inTerm: true}
 	a.key(vaxis.Key{Keycode: vaxis.KeyF02})
 	if ps := a.paneTerms(testW, 42); len(ps) != 2 || ps[0] != stacked(a, "s1", 1, 20) || ps[1] != stacked(a, shellID, 22, 20) {
 		t.Fatalf("split: %v", ps)
@@ -248,7 +248,7 @@ func stacked(a *app, key string, y, h int) paneTerm {
 func TestSideBySide(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}},
-		terms: map[string]*term.Model{"s1": term.New(), shellID: term.New()}, active: "s1", inTerm: true}
+		terms: map[string]pane{"s1": term.New(), shellID: term.New()}, active: "s1", inTerm: true}
 	a.key(vaxis.Key{Keycode: vaxis.KeyF02})
 	a.key(vaxis.Key{Keycode: vaxis.KeyF06})
 	x, end := a.paneSpan(testW)
@@ -293,7 +293,7 @@ func TestSideBySide(t *testing.T) {
 func TestDiffSplit(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}},
-		terms: map[string]*term.Model{"s1": term.New(), shellID: term.New()}, active: "s1", inTerm: true}
+		terms: map[string]pane{"s1": term.New(), shellID: term.New()}, active: "s1", inTerm: true}
 	a.cfg.Diff.Height = 25
 	a.key(vaxis.Key{Keycode: vaxis.KeyF02})
 	a.diff = &diffView{dir: "/a", busy: true} // what F3 opens, without running git
@@ -395,7 +395,7 @@ func TestSidebarWidth(t *testing.T) {
 // F5 and Ctrl+Z hide the sidebar while the pane has focus; the shell keeps Ctrl+Z.
 func TestZoom(t *testing.T) {
 	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}},
-		terms: map[string]*term.Model{"s1": term.New(), shellID: term.New()}, active: "s1"}
+		terms: map[string]pane{"s1": term.New(), shellID: term.New()}, active: "s1"}
 	a.key(vaxis.Key{Keycode: vaxis.KeyF05})
 	if x, _ := a.paneSpan(100); !a.zoom || !a.inTerm || x != 0 {
 		t.Fatalf("F5: zoom %v inTerm %v x %d", a.zoom, a.inTerm, x)
@@ -420,7 +420,7 @@ func TestZoom(t *testing.T) {
 // Ctrl+↑/↓ and Ctrl+⇧↑/↓ move the sidebar cursor from the pane and focus the sidebar.
 func TestCursorKeysFromPane(t *testing.T) {
 	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}, {Name: "b", Dir: "/b"}}},
-		terms: map[string]*term.Model{"s1": term.New()}, active: "s1", inTerm: true}
+		terms: map[string]pane{"s1": term.New()}, active: "s1", inTerm: true}
 	press := func(code rune, mods vaxis.ModifierMask, want int) {
 		t.Helper()
 		a.inTerm = true
@@ -435,13 +435,14 @@ func TestCursorKeysFromPane(t *testing.T) {
 	press(vaxis.KeyUp, vaxis.ModCtrl, 0)
 }
 
-// Ctrl+Shift+Q quits from the pane and the diff, asking first while sessions run.
+// Ctrl+Shift+Q quits from the pane and the diff, asking first while the shell
+// runs; Claude sessions keep running in the server, so they never ask.
 func TestQuitAsks(t *testing.T) {
 	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}},
-		terms: map[string]*term.Model{"s1": term.New()}, active: "s1", inTerm: true}
+		terms: map[string]pane{"s1": term.New(), shellID: term.New()}, active: "s1", inTerm: true}
 	q := vaxis.Key{Keycode: 'q', ShiftedCode: 'Q', Modifiers: vaxis.ModCtrl | vaxis.ModShift}
 	if a.key(q) || a.confirm == nil {
-		t.Fatalf("running session: quit without asking, confirm %v", a.confirm)
+		t.Fatalf("running shell: quit without asking, confirm %v", a.confirm)
 	}
 	if a.key(vaxis.Key{Keycode: 'n', Text: "n"}) || a.confirm != nil {
 		t.Fatal("n should cancel")
@@ -451,12 +452,12 @@ func TestQuitAsks(t *testing.T) {
 	if !a.key(vaxis.Key{Keycode: 'y', Text: "y"}) {
 		t.Fatal("y in the diff should quit")
 	}
-	a = &app{inTerm: true}
+	a = &app{terms: map[string]pane{"s1": term.New()}, active: "s1", inTerm: true}
 	if !a.key(q) {
-		t.Fatal("nothing running: should quit at once")
+		t.Fatal("only a Claude session: should quit at once")
 	}
 	no := false
-	a = &app{terms: map[string]*term.Model{"s1": term.New()}, active: "s1", inTerm: true}
+	a = &app{terms: map[string]pane{shellID: term.New()}, active: shellID, inTerm: true}
 	a.cfg.Quit.Confirm = &no
 	if !a.key(q) {
 		t.Fatal("quit.confirm false: should quit at once")
@@ -468,7 +469,7 @@ func TestQuitAsks(t *testing.T) {
 func TestEditorSplit(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}},
-		terms: map[string]*term.Model{"s1": term.New(), shellID: term.New(), editorID: term.New()}, active: "s1", inTerm: true}
+		terms: map[string]pane{"s1": term.New(), shellID: term.New(), editorID: term.New()}, active: "s1", inTerm: true}
 	a.cfg.Editor.Height = 75
 	f4 := vaxis.Key{Keycode: vaxis.KeyF04}
 	a.key(f4)
@@ -557,7 +558,7 @@ func TestRecentSessions(t *testing.T) {
 	a := &app{tree: tree{projects: []*project{
 		{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}, {ID: "s2"}}},
 		{Name: "b", Dir: "/b", Collapsed: true, sessions: []session{{ID: "s3"}}},
-	}}, terms: map[string]*term.Model{"s2": term.New()}}
+	}}, terms: map[string]pane{"s2": term.New()}}
 	for _, id := range []string{"s1", "gone", "s3", "s2"} {
 		a.visit(id)
 	}
@@ -580,7 +581,7 @@ func TestRecentSessions(t *testing.T) {
 func TestOpenKeepsDiff(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}, {ID: "s2"}}}}},
-		terms: map[string]*term.Model{"s1": term.New(), "s2": term.New()}, active: "s1", pending: map[string]bool{}}
+		terms: map[string]pane{"s1": term.New(), "s2": term.New()}, active: "s1", pending: map[string]bool{}}
 	a.diff = &diffView{dir: "/a", busy: true, focus: true}
 	a.cursor = 3 // s2
 	a.open()

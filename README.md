@@ -81,7 +81,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `-/+` | narrower / wider sidebar (or drag the line beside it), remembered |
 | `,` | settings: theme, status bar and its height, sidebar side and width, shell, diff and editor size, editor command, edit config.yaml in $EDITOR |
 | `?` | this help |
-| `q` | quit (asks while sessions run) |
+| `q` | quit (asks while the shell or editor runs) |
 | `S` | show / hide the status bar, remembered; its height in , settings |
 
 
@@ -98,7 +98,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `Ctrl+N` | new session in the open session's project, else the cursor's, sidebar too; not in the shell or editor |
 | `Ctrl+F` | focus next waiting session (◆), oldest first, sidebar too; not in the editor |
 | `^⇥` | go to sidebar, cursor to the session opened before (cycles, latest first, kept across restarts), sidebar too |
-| `Ctrl+⇧Q` | quit Cade, sidebar too (asks while sessions run) |
+| `Ctrl+⇧Q` | quit Cade, sidebar too (asks while the shell or editor runs) |
 | `^↑/^↓` | go to sidebar, cursor up / down, sidebar too |
 | `^⇧↑/^⇧↓` | go to sidebar, previous / next project, sidebar too |
 | `⌥↑/⌥↓` | with the diff, shell or editor split with the session: focus the session / the diff, shell or editor |
@@ -203,13 +203,94 @@ toasts:
 
 ### Quit
 
-`q` and `Ctrl+⇧Q` ask before quitting while Claude sessions or the shell run, since quitting
-closes them. To quit at once:
+`q` and `Ctrl+⇧Q` ask before quitting while the shell or editor runs, since quitting closes
+them. Claude sessions keep running in the session server (below) and never make Cade ask.
+To quit at once:
 
 ```yaml
 quit:
   confirm: false
 ```
+
+### Session server
+
+Claude sessions run in a session server, `cade --serve`, not in Cade itself. Cade starts the
+server the first time you open a session, and the server keeps running after Cade quits. Start
+Cade again, on this machine or over SSH (from a phone, for example), and it shows the running
+sessions again (● in the sidebar), with their screen and scrollback.
+
+- The server listens on `$XDG_RUNTIME_DIR/cade.sock` (else `/tmp/cade-<uid>.sock`), readable
+  only by you. It never listens on the network; reach it from another device over SSH.
+- More than one Cade can show the same session. The Cade that last typed, clicked or focused the
+  session sets its size, and the screen reflows to it.
+- Deleting a session (`d`, `Ctrl+D`) or removing its project ends it in the server too.
+- The shell and editor still run inside Cade and close when it quits.
+- Stopping the server (for example `pkill -f 'cade --serve'`) ends all running sessions; their
+  transcripts stay on disk and can be resumed. After an upgrade, Cade warns while the old server
+  runs; restart it to use the new version.
+
+#### Run the server as a systemd service
+
+Without a service, the server stops when your machine restarts, and it can stop when you log out.
+A systemd user service starts it at boot and keeps it running without a login.
+
+1. Put the binary in a fixed place. The service runs it from there:
+
+   ```sh
+   make build
+   mkdir -p ~/.local/bin
+   cp bin/cade ~/.local/bin/cade
+   ```
+
+2. Create the service file:
+
+   ```sh
+   mkdir -p ~/.config/systemd/user
+   cat > ~/.config/systemd/user/cade.service <<'EOF'
+   [Unit]
+   Description=Cade session server
+
+   [Service]
+   ExecStart=%h/.local/bin/cade --serve
+   Restart=on-failure
+
+   [Install]
+   WantedBy=default.target
+   EOF
+   ```
+
+   `%h` is your home directory. If you put the binary in a different place, change `ExecStart`.
+
+3. Stop a server that Cade started on its own. Only one server can run, so the service fails while
+   it runs. This step ends the sessions in it:
+
+   ```sh
+   pkill -f 'cade --serve'
+   ```
+
+4. Load the service, then start it now and at each boot:
+
+   ```sh
+   systemctl --user daemon-reload
+   systemctl --user enable --now cade.service
+   ```
+
+5. Let your user services run when you are not logged in:
+
+   ```sh
+   loginctl enable-linger "$USER"
+   ```
+
+6. Check that the server runs:
+
+   ```sh
+   systemctl --user status cade.service
+   ```
+
+To read its log, run `journalctl --user -u cade.service`. To upgrade, copy the new binary to
+`~/.local/bin/cade`, then run `systemctl --user restart cade.service`. A restart ends the running
+sessions. To remove the service, run `systemctl --user disable --now cade.service`, then delete
+the file.
 
 ### Shell
 
@@ -329,6 +410,8 @@ All Go commands run in Docker through `compose.yaml`. `make bump` runs on the ho
 | Path | Contents |
 |---|---|
 | `cmd/cade/main.go` | app: event loop, sidebar, Claude pane, dialogs |
+| `cmd/cade/serve.go` | session server (`cade --serve`) and its protocol |
+| `cmd/cade/remote.go` | the pane's view of a session the server runs |
 | `cmd/cade/sessions.go` | reading sessions and titles from `~/.claude/projects` |
 | `cmd/cade/projects.go` | project list and state files |
 | `cmd/cade/theme.go` | themes |
@@ -337,7 +420,9 @@ All Go commands run in Docker through `compose.yaml`. `make bump` runs on the ho
 
 Vaxis is vendored (via a `replace` in `go.mod`) for one added file,
 `widgets/term/scrollinfo.go`, which exposes the terminal widget's scroll position for the
-scrollbar. To upgrade Vaxis, copy the new release into `third_party/vaxis` and keep that file.
+scrollbar, and for `EventClipboard` (`widgets/term/events.go`, `osc.go`), which hands a copy
+from a headless terminal in the session server to Cade. To upgrade Vaxis, copy the new release
+into `third_party/vaxis` and keep both changes.
 
 ## Known limits
 
@@ -346,3 +431,5 @@ scrollbar. To upgrade Vaxis, copy the new release into `third_party/vaxis` and k
 - If you switch sessions inside a pane with `/resume` or `/clear`, the sidebar still shows the
   session the pane was opened with.
 - `Ctrl+Esc` needs the kitty keyboard protocol; without it use `F12`.
+- The session server has no host terminal, so Claude's colour queries (OSC 10/11) go
+  unanswered and it falls back to its defaults. Terminal images in a session are not shown.

@@ -5,6 +5,8 @@
 ├── cmd/cade/            # the app: one `main` package, tests beside each file
 │   ├── main.go          # startup, event loop, layout, Claude pane
 │   ├── config.go        # config.yaml (read, check, saveConfig) and Claude accounts
+│   ├── serve.go         # session server (`cade --serve`): Claude sessions outlive cade; socket protocol
+│   ├── remote.go        # pane interface and remoteTerm: a session the server runs, drawn from its frames
 │   ├── keys.go          # key bindings: single source for handling, hints and help dialog
 │   ├── tree.go          # sidebar model: projects, sessions, cursor, scroll
 │   ├── projects.go      # project list, titles, starred sessions

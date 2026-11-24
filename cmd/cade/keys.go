@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"go.rockorager.dev/vaxis"
-	"go.rockorager.dev/vaxis/widgets/term"
 )
 
 // binding is one shortcut: the keys that trigger it, what it does, and how it
@@ -78,7 +77,7 @@ var sidebarKeys = []binding{
 		run: func(a *app) { a.set = &settings{} }},
 	{label: "?", keys: []string{"?"}, hint: "help", help: "this help", idle: "all shortcuts",
 		run: func(a *app) { a.help = true }},
-	{label: "q", keys: []string{"q", "Ctrl+c"}, hint: "quit", help: "quit (asks while sessions run)", run: (*app).askQuit},
+	{label: "q", keys: []string{"q", "Ctrl+c"}, hint: "quit", help: "quit (asks while the shell or editor runs)", run: (*app).askQuit},
 	{label: "S", keys: []string{"S"}, hint: "status bar", help: "show / hide the status bar, remembered; its height in , settings",
 		run: (*app).toggleBar},
 }
@@ -112,7 +111,7 @@ var paneKeys = []binding{
 	{label: "^⇥", keys: []string{"Ctrl+Tab"}, hint: "recent",
 		help: "go to sidebar, cursor to the session opened before (cycles, latest first, kept across restarts), sidebar too",
 		run:  toSidebar((*app).stepRecent)},
-	{label: quitLbl, keys: []string{quitKey}, help: "quit Cade, sidebar too (asks while sessions run)", run: (*app).askQuit},
+	{label: quitLbl, keys: []string{quitKey}, help: "quit Cade, sidebar too (asks while the shell or editor runs)", run: (*app).askQuit},
 	{label: "^↑/^↓", keys: []string{"Ctrl+Up"}, hint: "row", help: "go to sidebar, cursor up / down, sidebar too",
 		run: toSidebar((*app).up)},
 	{keys: []string{"Ctrl+Down"}, run: toSidebar((*app).down)},
@@ -413,7 +412,7 @@ func (a *app) sidebarMouse(ev vaxis.Mouse, drag bool) {
 	}
 }
 
-func (a *app) paneMouse(t *term.Model, ev vaxis.Mouse) {
+func (a *app) paneMouse(t pane, ev vaxis.Mouse) {
 	if ev.EventType == vaxis.EventPress {
 		a.selSeq++
 		if !a.inTerm && a.diff == nil { // a click beside the diff only selects
@@ -423,10 +422,15 @@ func (a *app) paneMouse(t *term.Model, ev vaxis.Mouse) {
 	t.Update(ev)
 	// cade captures the mouse, so the host terminal's copy-on-select can't run; do it here.
 	if ev.Button == vaxis.MouseLeftButton && ev.EventType == vaxis.EventRelease && t.HasSelection() {
-		a.vx.ClipboardPush(trimCopy(t.Selection()))
-		clear := clearSel{t, a.selSeq}
-		time.AfterFunc(selLinger, func() { a.vx.PostEvent(clear) })
+		a.copySel(t, t.Selection())
 	}
+}
+
+// copySel copies the selection s of t and clears it a moment later.
+func (a *app) copySel(t pane, s string) {
+	a.vx.ClipboardPush(trimCopy(s))
+	clear := clearSel{t, a.selSeq}
+	time.AfterFunc(selLinger, func() { a.vx.PostEvent(clear) })
 }
 
 // trimCopy drops trailing spaces from every line and the leading spaces all
@@ -465,26 +469,22 @@ func (a *app) confirmKey(k vaxis.Key) {
 	}
 }
 
-// askQuit quits, first asking when sessions run, since quitting closes them.
+// askQuit quits, first asking when the shell or editor runs, since quitting
+// closes them; Claude sessions keep running in the session server.
 func (a *app) askQuit() {
 	var rows [][2]string
-	claude := len(a.terms)
 	for _, o := range [][2]string{{shellID, "Shell"}, {editorID, "Editor"}} {
 		if a.terms[o[0]] != nil {
-			claude--
 			rows = append(rows, [2]string{o[1], "running"})
 		}
-	}
-	if claude > 0 {
-		rows = append([][2]string{{"Claude", fmt.Sprintf("%d running", claude)}}, rows...)
 	}
 	if len(rows) == 0 || !a.confirmQuit() {
 		a.quit = true
 		return
 	}
-	note := "Closes them; Claude sessions stay on disk and can be resumed."
+	note := "Closes them; Claude sessions keep running and show again when Cade starts."
 	if a.terms[editorID] != nil {
-		note = "Closes them, the editor without saving; Claude sessions stay on disk and can be resumed."
+		note = "Closes them, the editor without saving; Claude sessions keep running and show again when Cade starts."
 	}
 	a.confirm = &confirmation{
 		title: "QUIT CADE",
