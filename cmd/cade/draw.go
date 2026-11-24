@@ -167,11 +167,15 @@ func (a *app) draw() {
 
 	if a.sideShown() {
 		a.drawSidebar(win.New(a.sideX(w), 0, a.sideW(), h))
-		for r := range h {
-			win.SetCell(a.sepX(w), r, cell("│", a.th.muted))
-		}
 	}
-	a.drawPane(win, w, h)
+	if !a.sheet() {
+		if a.sideShown() {
+			for r := range h {
+				win.SetCell(a.sepX(w), r, cell("│", a.th.muted))
+			}
+		}
+		a.drawPane(win, w, h)
+	}
 	a.drawHelp(win)
 	a.drawAdd(win)
 	a.drawRename(win)
@@ -198,6 +202,9 @@ func (a *app) barH(w int) int {
 	}
 	if n := a.cfg.StatusBar.Height; n > 0 {
 		return min(n, barMax)
+	}
+	if a.mobile { // a phone screen is short; drawBar cuts the hints with …
+		return 1
 	}
 	n := 1
 	for _, bs := range barTables {
@@ -263,7 +270,11 @@ func (a *app) drawBar(win vaxis.Window) {
 func (a *app) drawSidebar(side vaxis.Window) {
 	th := a.th
 	side.Fill(cell(" ", th.base))
-	a.titleBar(side, " SESSIONS", "", !a.inTerm)
+	back := ""
+	if a.mobile && hasPane(a) {
+		back = "✕ " // a tap on it goes back to the pane
+	}
+	a.titleBar(side, " SESSIONS", back, !a.inTerm)
 	_, sh := side.Size()
 	tree := side.New(0, titleH, a.sideW(), sh-titleH)
 	_, treeH := tree.Size()
@@ -372,6 +383,10 @@ func (a *app) drawPane(win vaxis.Window, w, h int) {
 	if ps[0].key == a.active { // each term's Draw shows its cursor, and the last one shown wins
 		slices.Reverse(ps)
 	}
+	lead := " "
+	if a.mobile {
+		lead = " ▾ " // a tap on the title bar shows the sidebar
+	}
 	for _, p := range ps {
 		right := ""
 		if p.y == titleH && p.x+p.w == end {
@@ -379,13 +394,13 @@ func (a *app) drawPane(win vaxis.Window, w, h int) {
 		}
 		title := win.New(p.x, p.y-titleH, p.w, titleH)
 		if p.key == diffID {
-			a.titleBar(title, " DIFF › "+a.diff.name, right, a.diff.focus)
+			a.titleBar(title, lead+"DIFF › "+a.diff.name, right, a.diff.focus)
 			a.drawDiff(win.New(p.x, p.y, p.w, p.h))
 			continue
 		}
 		t := a.terms[p.key]
 		on := a.inTerm && p.key == a.active
-		a.titleBar(title, " "+a.titleOf(p.key), right, on)
+		a.titleBar(title, lead+a.titleOf(p.key), right, on)
 		tw := max(p.w-barW, 1) // scrollbar
 		t.Resize(tw, p.h)
 		t.Draw(win.New(p.x, p.y, tw, p.h))

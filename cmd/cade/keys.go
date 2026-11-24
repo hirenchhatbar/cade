@@ -345,7 +345,19 @@ func (a *app) mouse(ev vaxis.Mouse) {
 	}
 	a.hover = noBar
 	x, end := a.paneSpan(w)
+	tap := ev.Button == vaxis.MouseLeftButton && ev.EventType == vaxis.EventPress
 	switch {
+	case a.sheet() && tap && ev.Row == 0: // ✕ on the title bar
+		if hasPane(a) {
+			a.setFocus(true)
+		}
+	case a.sheet():
+		a.sidebarMouse(ev, drag)
+	case a.mobile && tap && ev.Row == 0: // the pane's title bar
+		if a.diff != nil {
+			a.diff.focus = false
+		}
+		a.setFocus(false)
 	case p.key == diffID && ev.Col >= p.x && ev.Col < p.x+p.w:
 		ev.Col, ev.Row = ev.Col-p.x, ev.Row-p.y
 		a.diffMouse(ev)

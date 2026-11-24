@@ -292,6 +292,18 @@ To read its log, run `journalctl --user -u cade.service`. To upgrade, copy the n
 sessions. To remove the service, run `systemctl --user disable --now cade.service`, then delete
 the file.
 
+### Mobile
+
+`cade --mobile` (`-m`) is a layout for a phone, for example in Termux over SSH. It shows the
+sidebar or the pane, one at a time, each at the full width of the screen:
+
+- The sidebar fills the screen while it has focus. Open a session (`⏎`, a tap, `n`) and the pane
+  fills the screen in its place.
+- Tap the pane's title bar (`▾`) to show the sidebar again. Tap `✕` on the sidebar's title bar, or
+  press `Tab`, to go back to the pane.
+- The status bar keeps 1 row, unless `statusBar.height` sets one. `-`/`+` do not change the
+  remembered sidebar width.
+
 ### Shell
 
 `F2` opens the shell split under the session, so you can copy from Claude while typing in the

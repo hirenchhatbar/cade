@@ -589,3 +589,20 @@ func TestOpenKeepsDiff(t *testing.T) {
 		t.Fatalf("diff %v active %q inTerm %v", a.diff, a.active, a.inTerm)
 	}
 }
+
+// --mobile shows the sidebar or the pane, one at a time; the pane keeps the full width either way.
+func TestMobile(t *testing.T) {
+	a := &app{tree: tree{projects: []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}}},
+		terms: map[string]pane{"s1": term.New()}, active: "s1", mobile: true, st: state{SidebarW: 50}}
+	if x, end := a.paneSpan(45); !a.sheet() || x != 0 || end != 45 {
+		t.Fatalf("sidebar focus: sheet %v, pane %d..%d", a.sheet(), x, end)
+	}
+	a.key(vaxis.Key{Keycode: vaxis.KeyTab})
+	if a.sheet() || !a.inTerm {
+		t.Fatalf("Tab: sheet %v inTerm %v", a.sheet(), a.inTerm)
+	}
+	a.stepSide(1)
+	if a.st.SidebarW != 50 || a.barH(45) != 1 {
+		t.Fatalf("sidebar width %d, bar rows %d", a.st.SidebarW, a.barH(45))
+	}
+}

@@ -17,7 +17,7 @@ import (
 
 const (
 	appName  = "Cade"
-	version  = "0.1.17"
+	version  = "0.1.18"
 	appLabel = appName + " v" + version
 	sideDef  = 42            // sidebar width until resized; state.json keeps the resized one
 	sideMin  = 30            // narrowest sidebar, and narrowest pane beside it
@@ -145,6 +145,7 @@ type app struct {
 	upFull   bool            // F11 on the session: it fills the pane, the diff, shell or editor open behind it; not remembered
 	inTerm   bool            // keyboard focus on the Claude pane
 	zoom     bool            // sidebar hidden while the pane or diff has focus; not remembered
+	mobile   bool            // --mobile: zoom for good, and the sidebar fills the screen when shown
 	attn     []string        // sessions that rang for attention, oldest first
 
 	// transient UI state
@@ -179,6 +180,11 @@ func main() {
 	if len(os.Args) > 1 {
 		os.Exit(cli(os.Args[1:], os.Stdout, os.Stderr))
 	}
+	start(false)
+}
+
+// start runs Cade; mobile (--mobile) shows the sidebar or the pane, one at a time, full width.
+func start(mobile bool) {
 	cwd, _ := os.Getwd()
 	home, _ := os.UserHomeDir()
 	cfg, _, err := checkConfig(configPath(), home, cwd)
@@ -205,7 +211,7 @@ func main() {
 		os.Exit(1)
 	}
 	a := &app{tree: tree{projects: projects}, vx: vx, home: home, cwd: cwd, cfgPath: cfgPath, cfg: cfg,
-		st: loadState(statePath()), pending: map[string]bool{}, terms: map[string]pane{}}
+		st: loadState(statePath()), pending: map[string]bool{}, terms: map[string]pane{}, mobile: mobile}
 	var themeErr error
 	a.th, themeErr = loadTheme(cfg)
 	a.fail("", themeErr)
@@ -252,6 +258,8 @@ func cli(args []string, out, errOut io.Writer) int {
 			return 1
 		}
 		fmt.Fprintf(out, "%s: ok\n", configPath())
+	case "-m", "--mobile":
+		start(true)
 	case "-s", "--serve":
 		return serve()
 	case "-k", "--keys":
@@ -287,6 +295,8 @@ all shortcuts.
 Options:
   -h, --help     show this help
   -c, --check    list problems in config.yaml
+  -m, --mobile   phone layout: the sidebar or the pane, one at a time, full
+                 width; tap the pane's title bar for the sidebar, ✕ or Tab back
   -s, --serve    run the session server in the foreground; Cade starts it
                  when needed, and Claude sessions keep running in it after Cade quits
   -k, --keys     print all keyboard shortcuts as Markdown
@@ -803,7 +813,10 @@ func (a *app) diffFocused() bool { return a.diff != nil && a.diff.focus }
 
 // sideShown reports whether the sidebar is on screen: zooming hides it while the
 // pane or diff has focus. Focusing the sidebar shows it again until the pane has focus back.
-func (a *app) sideShown() bool { return !a.zoom || (!a.inTerm && !a.diffFocused()) }
+func (a *app) sideShown() bool { return !a.zoom && !a.mobile || (!a.inTerm && !a.diffFocused()) }
+
+// sheet reports whether the sidebar covers the whole screen (--mobile).
+func (a *app) sheet() bool { return a.mobile && a.sideShown() }
 
 // sideX is the sidebar's first column on a screen w wide.
 func (a *app) sideX(w int) int {
@@ -817,7 +830,7 @@ func (a *app) sideX(w int) int {
 // w wide: beside the sidebar and its separator, or the whole width when zoomed.
 func (a *app) paneSpan(w int) (x, end int) {
 	switch {
-	case !a.sideShown():
+	case !a.sideShown() || a.mobile: // mobile: the pane keeps the full width under the sheet
 		return 0, w
 	case a.st.SidebarRight:
 		return 0, w - a.sideW() - 1
@@ -826,7 +839,13 @@ func (a *app) paneSpan(w int) (x, end int) {
 }
 
 // sideW is the sidebar's width, 0 in state.json being the default.
-func (a *app) sideW() int { return cmp.Or(a.st.SidebarW, sideDef) }
+func (a *app) sideW() int {
+	if a.mobile {
+		w, _ := a.vx.Window().Size()
+		return w
+	}
+	return cmp.Or(a.st.SidebarW, sideDef)
+}
 
 // sepX is the column of the line between the sidebar and the pane on a screen w wide.
 func (a *app) sepX(w int) int {
@@ -843,6 +862,9 @@ func clampSide(v, w int) int { return max(min(v, w-sideMin-1), sideMin) }
 
 // stepSide widens (dir 1) or narrows (dir -1) the sidebar, saving it to state.json.
 func (a *app) stepSide(dir int) {
+	if a.mobile { // sideW is the screen's width there; keep the remembered one
+		return
+	}
 	w, _ := a.vx.Window().Size()
 	a.st.SidebarW = clampSide(a.sideW()+dir*sideStep, w)
 	a.saveState()
