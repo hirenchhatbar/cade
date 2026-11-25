@@ -29,6 +29,9 @@ type binding struct {
 func hasPane(a *app) bool { return a.terms[a.active] != nil }
 func noPane(a *app) bool  { return !hasPane(a) }
 
+// sessionShown reports whether the pane's term is a Claude session, not the shell or editor.
+func sessionShown(a *app) bool { return a.active != shellID && a.active != editorID }
+
 var sidebarKeys = []binding{
 	{label: "j/k", keys: []string{"j", "Down"}, hint: "move", help: "move down / up (also ↓/↑)",
 		run: (*app).down},
@@ -101,9 +104,9 @@ var paneKeys = []binding{
 	{keys: []string{zoomAlt}, when: func(a *app) bool { return a.active != shellID }, run: (*app).toggleZoom},
 	// the shell (next history) and editor (vim: completion) keep Ctrl+N
 	{label: newLbl, keys: []string{newKey}, hint: "new",
-		when: func(a *app) bool { return !a.inTerm || a.active != shellID && a.active != editorID },
+		when: func(a *app) bool { return !a.inTerm || sessionShown(a) },
 		help: "new session in the open session's project, else the cursor's, sidebar too; not in the shell or editor",
-		run:  func(a *app) { a.newSessionIn(slices.Index(a.projects, a.diffDir())) }},
+		run:  (*app).newHere},
 	// the editor keeps Ctrl+F (vim: page down)
 	{label: waitLbl, keys: []string{waitKey}, hint: "waiting", show: func(a *app) bool { return len(a.attn) > 0 },
 		when: func(a *app) bool { return !a.inTerm || a.active != editorID },
@@ -132,11 +135,11 @@ var paneKeys = []binding{
 		help: "focused window fills the pane ↔ split: the session (diff, shell or editor stays open), or the diff, shell or editor (remembered); split sizes in , settings",
 		run:  (*app).toggleFull},
 	{label: renLbl, keys: []string{renKey}, hint: "rename",
-		when: func(a *app) bool { return a.active != shellID && a.active != editorID },
+		when: sessionShown,
 		help: "rename this session (goes to the sidebar)", run: (*app).renameActive},
 	// pane only: Claude's own Ctrl+D (exit) is given up; the shell and editor keep theirs
 	{label: delLbl, keys: []string{delKey}, hint: "delete",
-		when: func(a *app) bool { return a.active != shellID && a.active != editorID },
+		when: sessionShown,
 		help: "delete this session from disk (asks)", run: (*app).confirmActive},
 	{label: "⇧PgUp/Dn", keys: []string{"Page_Up", "Shift+Page_Up"}, hint: "scroll", help: "scroll back / forward (PgUp/PgDn too)",
 		when: hasScrollback, run: func(a *app) { a.pageScroll(1) }},
@@ -257,6 +260,9 @@ func (a *app) pageScroll(dir int) {
 func (a *app) newSession() { a.newSessionIn(a.current().p) }
 
 // newSessionIn starts a new session in project p.
+// newHere starts a new session in the open session's project, else the cursor's.
+func (a *app) newHere() { a.newSessionIn(slices.Index(a.projects, a.diffDir())) }
+
 func (a *app) newSessionIn(p int) {
 	a.projects[p].Collapsed = false
 	a.cursor = slices.Index(a.rows(), row{p, rowNew})
@@ -328,6 +334,16 @@ func (a *app) mouse(ev vaxis.Mouse) {
 		a.dragSplit(ev.Col, ev.Row, w, h)
 		return
 	}
+	tap := ev.Button == vaxis.MouseLeftButton && ev.EventType == vaxis.EventPress
+	if a.mobile && tap && ev.Row == h { // the status bar's first row: the tap targets
+		if t := a.tapAt(ev.Col, w); t != nil {
+			t.run(a)
+		}
+		return
+	}
+	if a.confirm != nil { // the dialog is drawn over everything; nothing under it takes the mouse
+		return
+	}
 	if ev.Row >= h { // the status bar: only a drag that started above it goes on, held to its last row
 		if a.grab == "" {
 			return
@@ -345,7 +361,6 @@ func (a *app) mouse(ev vaxis.Mouse) {
 	}
 	a.hover = noBar
 	x, end := a.paneSpan(w)
-	tap := ev.Button == vaxis.MouseLeftButton && ev.EventType == vaxis.EventPress
 	switch {
 	case a.sheet() && tap && ev.Row == 0: // ✕ on the title bar
 		if hasPane(a) {
@@ -379,6 +394,51 @@ func (a *app) mouse(ev vaxis.Mouse) {
 		ev.Col, ev.Row = ev.Col-p.x, ev.Row-p.y
 		a.paneMouse(t, ev)
 	}
+}
+
+// tapTarget is a status bar tap target under --mobile, shown there in place of the key hints.
+type tapTarget struct {
+	label string
+	run   func(*app)
+}
+
+// taps are the status bar's tap targets under --mobile for what is on screen.
+func (a *app) taps() []tapTarget {
+	switch {
+	case a.confirm != nil:
+		return []tapTarget{{"[y] yes", func(a *app) { a.answer(true) }}, {"[n] no", func(a *app) { a.answer(false) }}}
+	case a.help, a.input != nil, a.rename != nil, a.set != nil, a.search != nil:
+		return nil // their keys need a keyboard
+	}
+	ts := []tapTarget{{"[new]", (*app).newHere}, {"[diff]", (*app).openDiff}, {"[shell]", (*app).toggleShell}}
+	switch {
+	case a.sheet() && a.current().s >= 0:
+		ts = append(ts, tapTarget{"[del]", (*app).confirmSession})
+	case !a.sheet() && hasPane(a) && sessionShown(a):
+		ts = append(ts, tapTarget{"[del]", (*app).confirmActive})
+	}
+	// no confirm: on a phone, quit is a deliberate tap (a running shell or editor closes)
+	return append(ts, tapTarget{"[quit]", func(a *app) { a.quit = true }})
+}
+
+// tapAt is the tap target at col of a status bar w wide, where drawBar puts
+// them right-aligned with one space margin.
+// shortcut: assumes the targets fit the bar's first row; if a phone narrower than them shows up, hit-test the wrapped rows.
+func (a *app) tapAt(col, w int) *tapTarget {
+	ts := a.taps()
+	x := w - 1
+	for _, t := range ts {
+		x -= runeLen(t.label) + 2
+	}
+	x += 2 // no gap before the first
+	for i := range ts {
+		n := runeLen(ts[i].label)
+		if col >= x && col < x+n {
+			return &ts[i]
+		}
+		x += n + 2
+	}
+	return nil
 }
 
 // paneTermAt is the pane term at col, row of a screen w × h, its title bar
@@ -473,11 +533,18 @@ const confirmHint = "[y] yes  [n] no"
 func (a *app) confirmKey(k vaxis.Key) {
 	switch {
 	case k.MatchString("y"):
-		yes := a.confirm.yes
-		a.confirm = nil
-		yes()
+		a.answer(true)
 	case k.MatchString("n"), k.MatchString("Escape"):
-		a.confirm = nil
+		a.answer(false)
+	}
+}
+
+// answer closes the yes/no dialog, running its yes on yes.
+func (a *app) answer(yes bool) {
+	run := a.confirm.yes
+	a.confirm = nil
+	if yes {
+		run()
 	}
 }
 

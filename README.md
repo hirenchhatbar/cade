@@ -303,6 +303,11 @@ sidebar or the pane, one at a time, each at the full width of the screen:
   press `Tab`, to go back to the pane.
 - The status bar keeps 1 row, unless `statusBar.height` sets one. `-`/`+` do not change the
   remembered sidebar width.
+- The status bar shows tap targets in place of the key hints: `[new]` (new session), `[diff]`
+  (`F3`), `[shell]` (`F2`), `[del]` and `[quit]`. `[del]` deletes the session under the cursor
+  while the sidebar shows, or the open session while the pane shows. It asks first: tap `[y] yes`
+  or `[n] no` on the status bar. `[quit]` quits at once, without asking, and closes a running shell
+  or editor.
 
 ### Shell
 

@@ -627,4 +627,23 @@ func TestMobile(t *testing.T) {
 	if a.st.SidebarW != 50 || a.barH(45) != 1 {
 		t.Fatalf("sidebar width %d, bar rows %d", a.st.SidebarW, a.barH(45))
 	}
+	// the status bar holds tap targets, right-aligned: "[new]  [diff]  [shell]  [del]  [quit]" from col 7
+	if got := strings.Join(a.barHints(), "  "); got != "[new]  [diff]  [shell]  [del]  [quit]" {
+		t.Fatalf("bar %q", got)
+	}
+	if a.tapAt(30, 45) != nil || a.tapAt(44, 45) != nil || a.tapAt(43, 45).label != "[quit]" {
+		t.Fatal("tap in a gap or margin hit a target, or [quit] missed")
+	}
+	a.tapAt(31, 45).run(a)
+	if a.confirm == nil || strings.Join(a.barHints(), "  ") != "[y] yes  [n] no" {
+		t.Fatalf("[del]: confirm %v, bar %q", a.confirm, a.barHints())
+	}
+	a.tapAt(43, 45).run(a) // [n] no
+	if a.confirm != nil || len(a.projects[0].sessions) != 1 {
+		t.Fatalf("[n] no: confirm %v, sessions %d", a.confirm, len(a.projects[0].sessions))
+	}
+	a.taps()[len(a.taps())-1].run(a)
+	if !a.quit {
+		t.Fatal("[quit] should quit at once")
+	}
 }

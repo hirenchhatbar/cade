@@ -192,7 +192,16 @@ func (a *app) screen() (w, h int) {
 }
 
 // barRows lays out items in a status bar w wide, after the app label on its first row.
-func barRows(items []string, w int) [][]string { return flow(items, w-1, runeLen(appLabel)+2) }
+func (a *app) barRows(items []string, w int) [][]string { return flow(items, w-1, a.barLead()) }
+
+// barLead is the width the app label takes on the status bar's first row; --mobile
+// leaves it out, so the tap targets fit a phone screen.
+func (a *app) barLead() int {
+	if a.mobile {
+		return 0
+	}
+	return runeLen(appLabel) + 2
+}
 
 // barH is the status bar's rows on a screen w wide: statusBar.height, or with 0
 // the rows the longest binding table needs, so the bar keeps its height as focus moves.
@@ -208,7 +217,7 @@ func (a *app) barH(w int) int {
 	}
 	n := 1
 	for _, bs := range barTables {
-		n = max(n, len(barRows(a.hints(bs, true), w)))
+		n = max(n, len(a.barRows(a.hints(bs, true), w)))
 	}
 	return n
 }
@@ -220,6 +229,13 @@ func init() { barTables = [][]binding{sidebarKeys, paneKeys} }
 
 // barHints are the status bar's hints for whatever takes the keys, checked in key()'s order.
 func (a *app) barHints() []string {
+	if a.mobile {
+		var labels []string
+		for _, t := range a.taps() {
+			labels = append(labels, t.label)
+		}
+		return labels
+	}
 	switch {
 	case a.confirm != nil:
 		return nil // dialogs show their own keys
@@ -248,15 +264,15 @@ func (a *app) drawBar(win vaxis.Window) {
 	}
 	th := a.th
 	win.Fill(cell(" ", th.base))
-	rows := barRows(a.barHints(), w)
+	rows := a.barRows(a.barHints(), w)
 	cut := len(rows) > h
 	rows = rows[:min(len(rows), h)]
 	for y, r := range rows {
 		segs := []vaxis.Segment{{Text: " ", Style: th.muted}}
 		room := w - 1
-		if y == 0 {
+		if y == 0 && a.barLead() > 0 {
 			segs = []vaxis.Segment{{Text: " " + appLabel + " ", Style: th.title}, {Text: " ", Style: th.muted}}
-			room -= runeLen(appLabel) + 2
+			room -= a.barLead()
 		}
 		line := strings.Join(r, "  ")
 		if cut && y == len(rows)-1 {

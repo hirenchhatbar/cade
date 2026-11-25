@@ -17,7 +17,7 @@ import (
 
 const (
 	appName  = "Cade"
-	version  = "0.1.19"
+	version  = "0.1.20"
 	appLabel = appName + " v" + version
 	sideDef  = 42            // sidebar width until resized; state.json keeps the resized one
 	sideMin  = 30            // narrowest sidebar, and narrowest pane beside it
@@ -341,6 +341,7 @@ func (a *app) handle(ev vaxis.Event) bool {
 		}
 	case vaxis.Mouse:
 		a.mouse(ev)
+		return a.quit // a tap on [quit] under --mobile
 	case refreshEvent:
 		a.attachRunning()
 		a.refresh()
