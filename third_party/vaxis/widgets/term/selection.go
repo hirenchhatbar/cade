@@ -226,6 +226,21 @@ func (vt *Model) handleSelectionMouse(msg vaxis.Mouse) bool {
 		return false
 	}
 
+	// cade patch: a drag past the top or bottom edge scrolls one row and holds to that edge,
+	// so a selection can reach the scrollback.
+	if vt.selectionMouse.active && msg.EventType != vaxis.EventPress && vt.height() > 0 && vt.width() > 0 {
+		if msg.EventType == vaxis.EventMotion {
+			switch {
+			case msg.Row < 0:
+				vt.scrollViewport(1)
+			case msg.Row >= vt.height():
+				vt.scrollViewport(-1)
+			}
+		}
+		msg.Row = clampInt(msg.Row, 0, vt.height()-1)
+		msg.Col = clampInt(msg.Col, 0, vt.width()-1)
+	}
+
 	point, ok := vt.selectionPointFromMouse(msg)
 	if !ok {
 		return false

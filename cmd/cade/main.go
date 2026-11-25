@@ -17,7 +17,7 @@ import (
 
 const (
 	appName  = "Cade"
-	version  = "0.1.20"
+	version  = "0.1.21"
 	appLabel = appName + " v" + version
 	sideDef  = 42            // sidebar width until resized; state.json keeps the resized one
 	sideMin  = 30            // narrowest sidebar, and narrowest pane beside it
@@ -26,35 +26,36 @@ const (
 	focusKey = "Ctrl+Escape" // shortcut: hardcoded, make configurable once the key choice settles
 	focusLbl = "Ctrl+Esc"
 	// Ctrl+Esc needs the kitty keyboard protocol; legacy terminals send plain Esc, so F12 stays as fallback.
-	focusAlt  = "F12"
-	diffKey   = "F3"
-	shellKey  = "F2"
-	editorKey = "F4"
-	zoomKey   = "F5"
-	zoomAlt   = "Ctrl+z" // Claude's own Ctrl+Z (suspend) only freezes the pane; the shell keeps it for job control
-	waitKey   = "Ctrl+f"
-	waitLbl   = "Ctrl+F"
-	newKey    = "Ctrl+n"
-	newLbl    = "Ctrl+N"
-	delKey    = "Ctrl+d"
-	delLbl    = "Ctrl+D"
-	renKey    = "Ctrl+r" // Claude's own Ctrl+R (history search) is given up; the shell and editor keep theirs
-	renLbl    = "Ctrl+R"
-	recentMax = 50             // sessions kept in state.json's history
-	quitKey   = "Ctrl+Shift+q" // needs the kitty keyboard protocol, like Ctrl+Esc; sidebar q always works
-	quitLbl   = "Ctrl+⇧Q"
-	shellID   = "shell"  // the one app-wide shell in terms
-	editorID  = "editor" // the one app-wide editor in terms
-	diffID    = "diff"   // the F3 diff in paneTerms; it is not a term
-	colsKey   = "F6"
-	fullKey   = "F11"
-	splitMinW = 60 // columns each side needs for side by side; a narrower pane stacks them
-	splitMin  = 10 // shell.height and diff.height bounds and settings step, in % of the pane
-	splitMax  = 90
-	splitStep = 10
-	newRowLbl = "[n] new session"
-	selLinger = 600 * time.Millisecond // selection stays highlighted this long after a copy
-	ddWindow  = 400 * time.Millisecond // a second d within this means dd
+	focusAlt   = "F12"
+	diffKey    = "F3"
+	shellKey   = "F2"
+	editorKey  = "F4"
+	zoomKey    = "F5"
+	zoomAlt    = "Ctrl+z" // Claude's own Ctrl+Z (suspend) only freezes the pane; the shell keeps it for job control
+	waitKey    = "Ctrl+f"
+	waitLbl    = "Ctrl+F"
+	newKey     = "Ctrl+n"
+	newLbl     = "Ctrl+N"
+	delKey     = "Ctrl+d"
+	delLbl     = "Ctrl+D"
+	renKey     = "Ctrl+r" // Claude's own Ctrl+R (history search) is given up; the shell and editor keep theirs
+	renLbl     = "Ctrl+R"
+	recentMax  = 50             // sessions kept in state.json's history
+	quitKey    = "Ctrl+Shift+q" // needs the kitty keyboard protocol, like Ctrl+Esc; sidebar q always works
+	quitLbl    = "Ctrl+⇧Q"
+	shellID    = "shell"  // the one app-wide shell in terms
+	editorID   = "editor" // the one app-wide editor in terms
+	diffID     = "diff"   // the F3 diff in paneTerms; it is not a term
+	colsKey    = "F6"
+	fullKey    = "F11"
+	splitMinW  = 60 // columns each side needs for side by side; a narrower pane stacks them
+	splitMin   = 10 // shell.height and diff.height bounds and settings step, in % of the pane
+	splitMax   = 90
+	splitStep  = 10
+	newRowLbl  = "[n] new session"
+	selLinger  = 600 * time.Millisecond // selection stays highlighted this long after a copy
+	ddWindow   = 400 * time.Millisecond // a second d within this means dd
+	edgeRepeat = 50 * time.Millisecond  // a drag held past a pane edge scrolls one row this often
 	// Claude's "auto" channel may pick OSC 99 (kitty), which the pane drops; BEL always arrives.
 	notifSettings = `{"preferredNotifChannel":"terminal_bell"}`
 )
@@ -71,6 +72,12 @@ type termEvent struct {
 
 // dTimeout fires when no second d followed the first, so the single-d action runs.
 type dTimeout struct{ seq int }
+
+// edgeTick repeats a drag held past a pane edge; seq drops it once any other mouse event came.
+type edgeTick struct {
+	ev  vaxis.Mouse
+	seq int
+}
 
 // clearSel fires a moment after a copy; seq drops it if the user clicked again since.
 // A nil t is the diff.
@@ -161,6 +168,7 @@ type app struct {
 	dWait     bool // a first d was pressed, see ddWindow
 	dSeq      int
 	selSeq    int  // bumped on every pane click, see clearSel
+	mouseSeq  int  // bumped on every mouse event, see edgeTick
 	pasting   bool // inside a bracketed paste; drawing waits for its end
 	hover     bar  // scrollbar under the mouse pointer
 	quit      bool
@@ -361,6 +369,10 @@ func (a *app) handle(ev vaxis.Event) bool {
 			ev.t.ClearSelection()
 		case a.diff != nil:
 			a.diff.to = a.diff.from
+		}
+	case edgeTick:
+		if ev.seq == a.mouseSeq {
+			a.mouse(ev.ev)
 		}
 	case dTimeout:
 		if a.dWait && ev.seq == a.dSeq {

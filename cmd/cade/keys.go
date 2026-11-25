@@ -316,6 +316,7 @@ func (a *app) pressD() {
 
 // mouse routes a mouse event to the pane scrollbar, the sidebar or the Claude pane.
 func (a *app) mouse(ev vaxis.Mouse) {
+	a.mouseSeq++
 	w, h := a.screen()
 	if ev.Button == vaxis.MouseLeftButton && (a.resizing || ev.EventType == vaxis.EventPress && a.sideShown() && ev.Col == a.sepX(w) && ev.Row < h) {
 		a.resizing = ev.EventType != vaxis.EventRelease
@@ -344,20 +345,20 @@ func (a *app) mouse(ev vaxis.Mouse) {
 	if a.confirm != nil { // the dialog is drawn over everything; nothing under it takes the mouse
 		return
 	}
-	if ev.Row >= h { // the status bar: only a drag that started above it goes on, held to its last row
+	if ev.Row >= h { // the status bar: only a drag that started above it goes on, held to the row below the panes
 		if a.grab == "" {
 			return
 		}
-		ev.Row = h - 1
+		ev.Row = h
 	}
 	p := a.paneTermAt(ev.Col, ev.Row, w, h)
 	t := a.terms[p.key]
 	drag := ev.Button == vaxis.MouseLeftButton && ev.EventType != vaxis.EventRelease
-	if ev.Button == vaxis.MouseLeftButton {
+	switch { // the pane a left press lands in keeps the drag until release, even past its edge
+	case ev.Button == vaxis.MouseLeftButton && ev.EventType == vaxis.EventPress:
+		a.grab = p.key
+	case ev.EventType == vaxis.EventRelease:
 		a.grab = ""
-		if ev.EventType == vaxis.EventPress {
-			a.grab = p.key
-		}
 	}
 	a.hover = noBar
 	x, end := a.paneSpan(w)
@@ -391,6 +392,10 @@ func (a *app) mouse(ev vaxis.Mouse) {
 		ev.Col -= a.sideX(w)
 		a.sidebarMouse(ev, drag)
 	case t != nil:
+		if drag && ev.EventType == vaxis.EventMotion && (ev.Row < p.y || ev.Row >= p.y+p.h) {
+			seq, held := a.mouseSeq, ev // held past the top or bottom edge: repeat it so the pane keeps scrolling
+			time.AfterFunc(edgeRepeat, func() { a.vx.PostEvent(edgeTick{held, seq}) })
+		}
 		ev.Col, ev.Row = ev.Col-p.x, ev.Row-p.y
 		a.paneMouse(t, ev)
 	}

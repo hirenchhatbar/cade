@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -645,5 +646,29 @@ func TestMobile(t *testing.T) {
 	a.taps()[len(a.taps())-1].run(a)
 	if !a.quit {
 		t.Fatal("[quit] should quit at once")
+	}
+}
+
+// A selection dragged past a pane's top edge scrolls into the scrollback and
+// a release there still finishes it.
+func TestDragPastEdgeScrolls(t *testing.T) {
+	vt := term.New()
+	vt.Resize(20, 3)
+	for i := range 10 {
+		vt.WriteString(fmt.Sprintf("line %d\r\n", i))
+	}
+	left := func(typ vaxis.EventType, row int) vaxis.Mouse {
+		return vaxis.Mouse{Button: vaxis.MouseLeftButton, EventType: typ, Row: row}
+	}
+	vt.Update(left(vaxis.EventPress, 1))
+	for range 20 {
+		vt.Update(left(vaxis.EventMotion, -1))
+	}
+	if off, m := vt.ScrollInfo(); off != m || m == 0 {
+		t.Fatalf("scroll %d of %d", off, m)
+	}
+	vt.Update(left(vaxis.EventRelease, -1))
+	if s := vt.Selection(); !strings.HasPrefix(s, "line 0") || !strings.HasSuffix(s, "line 8\nl") {
+		t.Fatalf("selection %q", s)
 	}
 }
