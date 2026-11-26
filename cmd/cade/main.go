@@ -55,7 +55,9 @@ const (
 	newRowLbl  = "[n] new session"
 	selLinger  = 600 * time.Millisecond // selection stays highlighted this long after a copy
 	ddWindow   = 400 * time.Millisecond // a second d within this means dd
-	edgeRepeat = 50 * time.Millisecond  // a drag held past a pane edge scrolls one row this often
+	edgeRepeat = 50 * time.Millisecond  // a drag held past a pane edge scrolls this often
+	edgeAccel  = 2                      // ... one row more per this many repeats held there,
+	edgeMax    = 30                     // ... up to this many rows each time
 	// Claude's "auto" channel may pick OSC 99 (kitty), which the pane drops; BEL always arrives.
 	notifSettings = `{"preferredNotifChannel":"terminal_bell"}`
 )
@@ -169,6 +171,7 @@ type app struct {
 	dSeq      int
 	selSeq    int  // bumped on every pane click, see clearSel
 	mouseSeq  int  // bumped on every mouse event, see edgeTick
+	edgeRun   int  // mouse events in a row a drag was held past a pane edge, see edgeAccel
 	pasting   bool // inside a bracketed paste; drawing waits for its end
 	hover     bar  // scrollbar under the mouse pointer
 	quit      bool

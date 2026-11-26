@@ -317,6 +317,8 @@ func (a *app) pressD() {
 // mouse routes a mouse event to the pane scrollbar, the sidebar or the Claude pane.
 func (a *app) mouse(ev vaxis.Mouse) {
 	a.mouseSeq++
+	run := a.edgeRun
+	a.edgeRun = 0
 	w, h := a.screen()
 	if ev.Button == vaxis.MouseLeftButton && (a.resizing || ev.EventType == vaxis.EventPress && a.sideShown() && ev.Col == a.sepX(w) && ev.Row < h) {
 		a.resizing = ev.EventType != vaxis.EventRelease
@@ -392,12 +394,18 @@ func (a *app) mouse(ev vaxis.Mouse) {
 		ev.Col -= a.sideX(w)
 		a.sidebarMouse(ev, drag)
 	case t != nil:
+		steps := 1 // each motion past an edge scrolls the pane one row
 		if drag && ev.EventType == vaxis.EventMotion && (ev.Row < p.y || ev.Row >= p.y+p.h) {
 			seq, held := a.mouseSeq, ev // held past the top or bottom edge: repeat it so the pane keeps scrolling
 			time.AfterFunc(edgeRepeat, func() { a.vx.PostEvent(edgeTick{held, seq}) })
+			// speed up the longer it is held: the edge below a pane is often the status bar, so distance can't tell
+			a.edgeRun = run + 1
+			steps = min(1+run/edgeAccel, edgeMax)
 		}
 		ev.Col, ev.Row = ev.Col-p.x, ev.Row-p.y
-		a.paneMouse(t, ev)
+		for range steps {
+			a.paneMouse(t, ev)
+		}
 	}
 }
 
