@@ -99,6 +99,28 @@ func TestShiftSTogglesBarNotStar(t *testing.T) {
 	}
 }
 
+func TestLaunchOpts(t *testing.T) {
+	for _, c := range []struct {
+		args    []string
+		mobile  bool
+		density string
+		ok      bool
+	}{
+		{[]string{"-m"}, true, "", true},
+		{[]string{"--density=comfortable"}, false, "comfortable", true},
+		{[]string{"-d", "compact", "--mobile"}, true, "compact", true},
+		{[]string{"-m", "--density", "comfortable"}, true, "comfortable", true},
+		{[]string{"--density=roomy"}, false, "", false},
+		{[]string{"-d"}, false, "", false},
+		{[]string{"--mobile=1"}, false, "", false},
+	} {
+		mobile, density, err := launchOpts(c.args)
+		if (err == nil) != c.ok || mobile != c.mobile || density != c.density {
+			t.Errorf("%v: %v %q %v", c.args, mobile, density, err)
+		}
+	}
+}
+
 func TestCLI(t *testing.T) {
 	var out, errOut strings.Builder
 	if code := cli([]string{"--keys"}, &out, &errOut); code != 0 || !strings.Contains(out.String(), "| `d/dd` |") || !strings.Contains(out.String(), "### Claude pane") {

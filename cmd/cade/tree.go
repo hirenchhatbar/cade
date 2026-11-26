@@ -23,9 +23,10 @@ type rowKey struct {
 // UI or IO; callers persist changes when a method reports one.
 type tree struct {
 	projects []*project
-	cursor   int // index into rows()
-	top      int // first visible row
-	visible  int // rows on screen, set by the renderer
+	cursor   int           // index into rows()
+	top      int           // first visible row
+	visible  int           // screen lines for rows, set by the renderer
+	rowLines func(row) int // screen lines a row takes, set by the renderer; nil = 1
 }
 
 // rows flattens projects and their sessions into the sidebar tree.
@@ -109,14 +110,60 @@ func (t *tree) move(dir int) bool {
 // scroll sets the first visible row and pulls the cursor into view, so
 // keepCursorVisible doesn't snap the scroll back.
 func (t *tree) scroll(top int) {
-	t.top = max(min(top, max(len(t.rows())-t.visible, 0)), 0)
-	t.cursor = max(min(t.cursor, t.top+t.visible-1), t.top)
+	t.top = max(min(top, t.maxTop()), 0)
+	t.cursor = max(min(t.cursor, t.top+t.shown(t.top)-1), t.top)
 }
 
 // keepCursorVisible scrolls just enough to show the cursor, without leaving
 // empty space below the last row.
 func (t *tree) keepCursorVisible() {
 	t.top = min(t.top, t.cursor)
-	t.top = max(t.top, t.cursor-t.visible+1)
-	t.top = min(t.top, max(len(t.rows())-t.visible, 0))
+	for t.top < t.cursor && t.top+t.shown(t.top) <= t.cursor {
+		t.top++
+	}
+	t.top = min(t.top, t.maxTop())
+}
+
+// lines is the screen lines row i of rows takes.
+func (t *tree) lines(rows []row, i int) int {
+	if t.rowLines == nil {
+		return 1
+	}
+	return t.rowLines(rows[i])
+}
+
+// shown is how many rows from row top fit on screen, at least 1.
+func (t *tree) shown(top int) int {
+	rows := t.rows()
+	n, used := 0, 0
+	for i := top; i < len(rows); i++ {
+		if used += t.lines(rows, i); used > t.visible {
+			break
+		}
+		n++
+	}
+	return max(n, 1)
+}
+
+// maxTop is the first visible row when scrolled to the bottom: the last row ends the screen.
+func (t *tree) maxTop() int {
+	rows := t.rows()
+	used := 0
+	for i := len(rows) - 1; i >= 0; i-- {
+		if used += t.lines(rows, i); used > t.visible {
+			return min(i+1, len(rows)-1)
+		}
+	}
+	return 0
+}
+
+// rowAt is the row index at screen line y of the tree, or -1 below the last row.
+func (t *tree) rowAt(y int) int {
+	rows := t.rows()
+	for i := t.top; i < len(rows) && y >= 0; i++ {
+		if y -= t.lines(rows, i); y < 0 {
+			return i
+		}
+	}
+	return -1
 }

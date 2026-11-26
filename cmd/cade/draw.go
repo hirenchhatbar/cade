@@ -3,6 +3,7 @@ package main
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -295,29 +296,62 @@ func (a *app) drawSidebar(side vaxis.Window) {
 	tree := side.New(0, titleH, a.sideW(), sh-titleH)
 	_, treeH := tree.Size()
 
-	a.visible = max(treeH, 1)
+	a.visible = treeH
+	cw := a.sideW() // row content width
+	a.rowLines = func(r row) int { return len(a.labelLines(r, cw)) - 1 + a.rowH() }
+	overflow := a.maxTop() > 0
+	if overflow {
+		cw = a.sideW() - 1 // last column is the scrollbar; narrower rows only wrap more, so it still overflows
+	}
 	a.keepCursorVisible()
 	rows := a.rows()
-	overflow := len(rows) > a.visible
-	cw := a.sideW() // row content width
-	if overflow {
-		cw = a.sideW() - 1 // last column is the scrollbar
-	}
 	if a.search != nil {
 		a.drawSearch(tree)
 	} else {
-		for i := a.top; i < min(a.top+a.visible, len(rows)); i++ {
-			a.drawRow(tree, i-a.top, rows[i], i == a.cursor, cw)
+		for i, y := a.top, 0; i < len(rows) && y < treeH; i++ {
+			n := len(a.labelLines(rows[i], cw))
+			a.drawRow(tree, y, rows[i], i == a.cursor, cw)
+			if i+1 < len(rows) && rows[i+1].p == rows[i].p { // the tree line runs on through the density's blank lines
+				for g := n; g < a.rowLines(rows[i]); g++ {
+					tree.PrintTruncate(y+g, vaxis.Segment{Text: "   │", Style: a.th.projectStyle(a.projects[rows[i].p])})
+				}
+			}
+			y += a.rowLines(rows[i])
 		}
 	}
 	if overflow && a.search == nil {
-		m := len(rows) - a.visible
-		a.scrollbar(tree, a.sideW()-1, 1, 0, a.visible, m-a.top, m, !a.inTerm || a.hover == sideBar)
+		m := a.maxTop()
+		a.scrollbar(tree, a.sideW()-1, 1, 0, treeH, m-a.top, m, !a.inTerm || a.hover == sideBar)
 	}
 }
 
+// densities maps a sidebar.density (or --density) to the blank lines under each sidebar row.
+var densities = map[string]int{"compact": 0, "comfortable": 1}
+
+func densityNames() string { return strings.Join(slices.Sorted(maps.Keys(densities)), ", ") }
+
+// rowH is the screen lines one sidebar row takes: the row and its density's blank lines.
+func (a *app) rowH() int { return 1 + densities[a.cfg.Sidebar.Density] }
+
 // starX is the column of a session row's star: after "   ├─ " and the running mark.
 const starX = 8
+
+// titleLines is the most lines a wrapped session title (sidebar.wrap) takes.
+const titleLines = 3
+
+// labelLines is the label of row r cw columns wide: a session title wraps when
+// sidebar.wrap is on, anything else is cut to one line.
+func (a *app) labelLines(r row, cw int) []string {
+	p := a.projects[r.p]
+	if r.s < 0 {
+		return []string{""} // drawRow draws headers and the new-session row itself
+	}
+	room := max(cw-starX-2, 1) // after the star
+	if !a.cfg.Sidebar.Wrap {
+		return []string{truncate(p.sessions[r.s].Title, room)}
+	}
+	return wrap(p.sessions[r.s].Title, room, titleLines)
+}
 
 // drawRow draws one tree row at line y, cw columns wide.
 func (a *app) drawRow(win vaxis.Window, y int, r row, selected bool, cw int) {
@@ -357,10 +391,10 @@ func (a *app) drawRow(win vaxis.Window, y int, r row, selected bool, cw int) {
 	if r.s == len(p.sessions)-1 || (r.s == rowNew && len(p.sessions) == 0) {
 		branch = "   └─ "
 	}
-	label, mark, star, labelStyle, markStyle := newRowLbl, "  ", "", th.key, th.running
+	label, mark, star, labelStyle, markStyle := []string{newRowLbl}, "  ", "", th.key, th.running
 	if r.s >= 0 {
 		s := p.sessions[r.s]
-		label, star, labelStyle = s.Title, "  ", th.base
+		label, star, labelStyle = a.labelLines(r, cw), "  ", th.base
 		if slices.Contains(a.attn, s.ID) {
 			mark, markStyle = "◆ ", th.attention
 			labelStyle.Attribute |= vaxis.AttrBold
@@ -372,11 +406,16 @@ func (a *app) drawRow(win vaxis.Window, y int, r row, selected bool, cw int) {
 		}
 	}
 	room := cw - runeLen(branch+mark+star)
-	win.PrintTruncate(y,
-		vaxis.Segment{Text: branch, Style: hl(th.projectStyle(p))},
-		vaxis.Segment{Text: mark, Style: hl(markStyle)},
-		vaxis.Segment{Text: star, Style: hl(th.key)},
-		vaxis.Segment{Text: pad(truncate(label, room), room), Style: hl(labelStyle)})
+	for i, l := range label {
+		if i == 1 { // a wrapped title's next lines: the tree line runs on, no mark or star
+			branch, mark, star = strings.Replace(strings.Replace(branch, "├─", "│ ", 1), "└─", "  ", 1), "  ", "  "
+		}
+		win.PrintTruncate(y+i,
+			vaxis.Segment{Text: branch, Style: hl(th.projectStyle(p))},
+			vaxis.Segment{Text: mark, Style: hl(markStyle)},
+			vaxis.Segment{Text: star, Style: hl(th.key)},
+			vaxis.Segment{Text: pad(truncate(l, room), room), Style: hl(labelStyle)})
+	}
 }
 
 func (a *app) drawPane(win vaxis.Window, w, h int) {
@@ -718,7 +757,8 @@ func (a *app) drawSearch(win vaxis.Window) {
 		return
 	}
 	sel := max(min(sr.sel, len(hits)-1), 0)
-	listH := max(a.visible-2, 1) // query, blank
+	_, h := win.Size()
+	listH := max((h-2)/a.rowH(), 1) // query, blank
 	top := max(sel-listH+1, 0)
 	for i := top; i < min(len(hits), top+listH); i++ {
 		h := hits[i]
@@ -736,7 +776,7 @@ func (a *app) drawSearch(win vaxis.Window) {
 		segs = append(segs,
 			vaxis.Segment{Text: pad("", a.sideW()-runeLen(mark+title+proj)), Style: base},
 			vaxis.Segment{Text: proj, Style: muted})
-		win.PrintTruncate(2+i-top, segs...)
+		win.PrintTruncate(2+(i-top)*a.rowH(), segs...)
 	}
 }
 
@@ -800,6 +840,10 @@ func (a *app) drawSettings(win vaxis.Window) {
 	if a.confirmQuit() {
 		quit = "☑"
 	}
+	wrapTitles := "☐"
+	if a.cfg.Sidebar.Wrap {
+		wrapTitles = "☑"
+	}
 	editor := a.editorCmd()
 	if st.typing {
 		editor = st.cmd + "▏"
@@ -810,6 +854,8 @@ func (a *app) drawSettings(win vaxis.Window) {
 		setBarH:    {"Status bar height", barH},
 		setSide:    {"Sidebar", side},
 		setSideW:   {"Sidebar width", fmt.Sprintf("‹ %d ›", a.sideW())},
+		setDensity: {"Sidebar density", "‹ " + cmp.Or(a.cfg.Sidebar.Density, "compact") + " ›"},
+		setWrap:    {"Wrap titles", wrapTitles},
 		setShell:   {"Shell size", fmt.Sprintf("‹ %d%% ›", splitPct(a.cfg.Shell.Height))},
 		setDiff:    {"Diff size", fmt.Sprintf("‹ %d%% ›", splitPct(a.cfg.Diff.Height))},
 		setEditorH: {"Editor size", fmt.Sprintf("‹ %d%% ›", splitPct(a.cfg.Editor.Height))},

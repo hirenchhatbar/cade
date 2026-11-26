@@ -176,6 +176,29 @@ diff:
   height: 40
 ```
 
+### Sidebar density
+
+The sidebar is `compact` by default: one line per row. `comfortable` puts a blank line under
+each project, session and search hit, which also makes rows easier to tap:
+
+```yaml
+sidebar:
+  density: comfortable
+```
+
+`cade --density comfortable` (`-d comfortable`, also `--density=comfortable`) sets the density for
+one run only and does not change `config.yaml`. It combines with `--mobile`.
+
+### Wrap session titles
+
+Long session titles are cut with `…` by default. `wrap: true` wraps them onto up to 3 lines
+instead; a title longer than that ends with `…` on its third line:
+
+```yaml
+sidebar:
+  wrap: true
+```
+
 ### Status bar
 
 The bar along the bottom shows Cade's name and version, then, right-aligned, the keys for whatever has focus: the
@@ -359,6 +382,8 @@ the rest of the file, comments included, is kept (indentation is normalised to t
 "Status bar height" steps `statusBar.height` from auto (0) to 5 rows, written to `config.yaml` the same way.
 "Sidebar" puts the sessions sidebar on the left (default) or right; it is saved in `state.json`.
 "Sidebar width" steps the sidebar width by 2 columns (default 42, at least 30, leaving the pane at least 30); `-`/`+` in the sidebar and dragging the line between sidebar and pane do the same. It is saved in `state.json`.
+"Sidebar density" switches `sidebar.density` between `compact` and `comfortable`, written to `config.yaml` the same way.
+"Wrap titles" toggles `sidebar.wrap`, written to `config.yaml` the same way.
 "Shell size", "Diff size" and "Editor size" step `shell.height`, `diff.height` and `editor.height` by 10%, written to `config.yaml` the same way.
 "Editor (F4)" edits `editor.cmd` as text: `⏎` saves it to `config.yaml` the same way (empty = `$VISUAL`, else `$EDITOR`), `Esc` cancels; a running editor keeps its old command.
 "Edit config.yaml" suspends Cade and opens the file in `$VISUAL`, else `$EDITOR`, else `vi`. On

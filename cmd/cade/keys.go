@@ -463,8 +463,9 @@ func (a *app) sidebarMouse(ev vaxis.Mouse, drag bool) {
 		return
 	}
 	rows := a.rows()
-	r := ev.Row - titleH
-	onBar := len(rows) > a.visible && ev.Col == a.sideW()-1 && r >= 0 && r < a.visible
+	line := ev.Row - titleH
+	m := a.maxTop()
+	onBar := m > 0 && ev.Col == a.sideW()-1 && line >= 0 && line < a.visible
 	if onBar {
 		a.hover = sideBar
 	}
@@ -477,10 +478,9 @@ func (a *app) sidebarMouse(ev vaxis.Mouse, drag bool) {
 		if a.inTerm {
 			a.setFocus(false)
 		}
-		m := len(rows) - a.visible
-		a.scroll(m - offsetAt(r, a.visible, m))
-	case ev.Button == vaxis.MouseLeftButton && ev.EventType == vaxis.EventPress && r >= 0 && r+a.top < len(rows):
-		a.cursor = r + a.top
+		a.scroll(m - offsetAt(line, a.visible, m))
+	case ev.Button == vaxis.MouseLeftButton && ev.EventType == vaxis.EventPress && a.rowAt(line) >= 0:
+		a.cursor = a.rowAt(line)
 		if rows[a.cursor].s >= 0 && ev.Col >= starX && ev.Col < starX+2 {
 			a.toggleStar()
 		} else if rows[a.cursor].s != rowHeader {
@@ -921,6 +921,8 @@ const (
 	setBarH
 	setSide
 	setSideW
+	setDensity
+	setWrap
 	setShell
 	setDiff
 	setEditorH
@@ -971,6 +973,10 @@ func (a *app) settingsKey(k vaxis.Key) {
 		a.stepSide(-1)
 	case st.sel == setSideW && (change || k.MatchString("Right") || k.MatchString("l")):
 		a.stepSide(1)
+	case st.sel == setDensity && (change || k.MatchString("Left") || k.MatchString("Right") || k.MatchString("h") || k.MatchString("l")):
+		a.toggleDensity()
+	case st.sel == setWrap && (change || k.MatchString("Left") || k.MatchString("Right")):
+		a.toggleWrap()
 	case st.sel == setShell && (k.MatchString("Left") || k.MatchString("h")):
 		a.stepSplit(-1, &a.cfg.Shell.Height, "shell")
 	case st.sel == setShell && (change || k.MatchString("Right") || k.MatchString("l")):

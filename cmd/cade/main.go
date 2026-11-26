@@ -17,7 +17,7 @@ import (
 
 const (
 	appName  = "Cade"
-	version  = "0.1.21"
+	version  = "0.1.22"
 	appLabel = appName + " v" + version
 	sideDef  = 42            // sidebar width until resized; state.json keeps the resized one
 	sideMin  = 30            // narrowest sidebar, and narrowest pane beside it
@@ -188,17 +188,21 @@ func main() {
 	if len(os.Args) > 1 {
 		os.Exit(cli(os.Args[1:], os.Stdout, os.Stderr))
 	}
-	start(false)
+	start(false, "")
 }
 
-// start runs Cade; mobile (--mobile) shows the sidebar or the pane, one at a time, full width.
-func start(mobile bool) {
+// start runs Cade; mobile (--mobile) shows the sidebar or the pane, one at a time, full width;
+// density (--density), when set, stands in for sidebar.density of config.yaml for this run.
+func start(mobile bool, density string) {
 	cwd, _ := os.Getwd()
 	home, _ := os.UserHomeDir()
 	cfg, _, err := checkConfig(configPath(), home, cwd)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cade: %s:\n%s\n", configPath(), indent(err.Error()))
 		os.Exit(1)
+	}
+	if density != "" {
+		cfg.Sidebar.Density = density
 	}
 	cfgPath := projectsPath()
 	projects, err := loadProjects(cfgPath)
@@ -266,8 +270,6 @@ func cli(args []string, out, errOut io.Writer) int {
 			return 1
 		}
 		fmt.Fprintf(out, "%s: ok\n", configPath())
-	case "-m", "--mobile":
-		start(true)
 	case "-s", "--serve":
 		return serve()
 	case "-k", "--keys":
@@ -275,10 +277,38 @@ func cli(args []string, out, errOut io.Writer) int {
 	case "-v", "--version":
 		fmt.Fprintln(out, appName, version)
 	default:
-		fmt.Fprintf(errOut, "cade: unknown option %q\n\n%s", args[0], usage())
-		return 2
+		mobile, density, err := launchOpts(args)
+		if err != nil {
+			fmt.Fprintf(errOut, "cade: %v\n\n%s", err, usage())
+			return 2
+		}
+		start(mobile, density)
 	}
 	return 0
+}
+
+// launchOpts reads the options that start Cade, in any order: -m and -d <density>
+// (also --density <density> and --density=<density>).
+func launchOpts(args []string) (mobile bool, density string, err error) {
+	for i := 0; i < len(args); i++ {
+		opt, val, hasVal := strings.Cut(args[i], "=")
+		switch {
+		case !hasVal && (opt == "-m" || opt == "--mobile"):
+			mobile = true
+		case opt == "-d" || opt == "--density":
+			if !hasVal && i+1 < len(args) {
+				i++
+				val = args[i]
+			}
+			if _, ok := densities[val]; !ok {
+				return false, "", fmt.Errorf("--density: %q is not one of %s", val, densityNames())
+			}
+			density = val
+		default:
+			return false, "", fmt.Errorf("unknown option %q", args[i])
+		}
+	}
+	return mobile, density, nil
 }
 
 func indent(s string) string { return "  " + strings.ReplaceAll(s, "\n", "\n  ") }
@@ -295,6 +325,7 @@ func usage() string {
 	return logo + "\n\n" + appLabel + ` - a terminal ADE for Claude Code sessions.
 
 Usage: cade [option]
+       cade [-m] [-d compact|comfortable]
 
 With no option, Cade opens a sidebar of your projects and their Claude
 sessions; the selected session runs in the right pane. Press ? inside for
@@ -305,6 +336,8 @@ Options:
   -c, --check    list problems in config.yaml
   -m, --mobile   phone layout: the sidebar or the pane, one at a time, full
                  width; tap the pane's title bar for the sidebar, ✕ or Tab back
+  -d, --density  sidebar density for this run: compact or comfortable, a
+                 blank line under each row; default sidebar.density of config.yaml
   -s, --serve    run the session server in the foreground; Cade starts it
                  when needed, and Claude sessions keep running in it after Cade quits
   -k, --keys     print all keyboard shortcuts as Markdown
@@ -1033,6 +1066,28 @@ func (a *app) cycleTheme(dir int) {
 	var err error
 	a.th, err = loadTheme(a.cfg)
 	a.fail("", err)
+}
+
+// toggleDensity switches the sidebar between compact and comfortable, saving it to config.yaml.
+func (a *app) toggleDensity() {
+	v := "comfortable"
+	if a.rowH() > 1 {
+		v = "compact"
+	}
+	if err := saveConfig(configPath(), v, "sidebar", "density"); err != nil {
+		a.fail("save failed: ", err)
+		return
+	}
+	a.cfg.Sidebar.Density = v
+}
+
+// toggleWrap flips sidebar.wrap, saving it to config.yaml.
+func (a *app) toggleWrap() {
+	if err := saveConfig(configPath(), !a.cfg.Sidebar.Wrap, "sidebar", "wrap"); err != nil {
+		a.fail("save failed: ", err)
+		return
+	}
+	a.cfg.Sidebar.Wrap = !a.cfg.Sidebar.Wrap
 }
 
 // toggleConfirmQuit flips quit.confirm, saving it to config.yaml.

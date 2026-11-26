@@ -168,6 +168,28 @@ func TestScrollTree(t *testing.T) {
 	}
 }
 
+func TestScrollTallRows(t *testing.T) {
+	// 10 rows; sessions 6 and 7 (rows 8 and 9) take 3 lines each, as wrapped titles do
+	a := &app{tree: tree{visible: 5, rowLines: func(r row) int { return 1 + 2*min(max(r.s-5, 0), 1) }}}
+	a.projects = []*project{{Name: "a", Dir: "/a", sessions: make([]session, 8)}}
+	if m := a.maxTop(); m != 9 { // rows 8 and 9 take 6 lines, more than the 5 on screen
+		t.Fatalf("maxTop %d", m)
+	}
+	a.scroll(7)
+	if a.top != 7 || a.cursor != 7 || a.rowAt(0) != 7 || a.rowAt(1) != 8 || a.rowAt(3) != 8 || a.rowAt(4) != 9 || a.rowAt(7) != -1 {
+		t.Fatalf("scroll 7: top %d cursor %d rowAt %d %d %d %d %d", a.top, a.cursor, a.rowAt(0), a.rowAt(1), a.rowAt(3), a.rowAt(4), a.rowAt(7))
+	}
+	a.cursor = 9
+	a.keepCursorVisible()
+	if a.top != 9 {
+		t.Fatalf("keepCursorVisible: top %d", a.top)
+	}
+	a.scroll(0)
+	if a.top != 0 || a.cursor != 4 {
+		t.Fatalf("scroll up: top %d cursor %d", a.top, a.cursor)
+	}
+}
+
 func TestFlow(t *testing.T) {
 	rows := flow([]string{"[j/k] move", "[n] new session", "[⇧PgUp/Dn] reorder", "[?] help", "a very long item over the width"}, 32, 5)
 	var lines []string

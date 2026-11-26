@@ -30,6 +30,10 @@ type config struct {
 		Wrap   *bool `yaml:"wrap"`   // long lines wrap in the F3 diff; false cuts them with …. Default: true
 		Height int   `yaml:"height"` // like shell.height, for the diff
 	} `yaml:"diff"`
+	Sidebar struct {
+		Density string `yaml:"density"` // compact or comfortable (a blank line under each row), see densities. Default: compact
+		Wrap    bool   `yaml:"wrap"`    // long session titles wrap onto up to titleLines lines; false cuts them with …. Default: false
+	} `yaml:"sidebar"`
 	StatusBar struct {
 		Height int `yaml:"height"` // rows, up to barMax; 0 = as many as the longest hints need. Default: 0
 	} `yaml:"statusBar"`
@@ -92,6 +96,9 @@ func parseConfig(path string) (cfg config, issues []string, err error) {
 	}
 	if p := cfg.Toasts.Position; p != "" && !slices.Contains(toastPositions, p) {
 		issues = append(issues, fmt.Sprintf("toasts.position: %q is not one of %s", p, strings.Join(toastPositions, ", ")))
+	}
+	if _, ok := densities[cfg.Sidebar.Density]; cfg.Sidebar.Density != "" && !ok {
+		issues = append(issues, fmt.Sprintf("sidebar.density: %q is not one of %s", cfg.Sidebar.Density, densityNames()))
 	}
 	if h := cfg.StatusBar.Height; h < 0 || h > barMax {
 		issues = append(issues, fmt.Sprintf("statusBar.height: %d is not between 0 and %d", h, barMax))

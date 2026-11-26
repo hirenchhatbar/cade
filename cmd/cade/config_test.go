@@ -114,6 +114,11 @@ func TestCheckConfig(t *testing.T) {
 		t.Fatalf("fatal error should hold the first three issues only: %v", err)
 	}
 
+	write("sidebar: {density: roomy}\n")
+	if _, issues, _ := parseConfig(path); !slices.Equal(issues, []string{`sidebar.density: "roomy" is not one of comfortable, compact`}) {
+		t.Fatalf("sidebar.density: %v", issues)
+	}
+
 	write("theme: [")
 	if _, issues, err := checkConfig(path, dir, dir); err == nil || len(issues) != 1 {
 		t.Fatalf("syntax error: %v %v", issues, err)
