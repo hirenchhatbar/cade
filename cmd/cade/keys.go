@@ -43,7 +43,7 @@ var sidebarKeys = []binding{
 		idle: "open selected session", run: (*app).open},
 	{label: "n", keys: []string{"n"}, hint: "new session", help: "new session in this project", idle: "new session",
 		run: (*app).newSession},
-	{label: "/", keys: []string{"/"}, hint: "search", help: "fuzzy search session titles, all projects",
+	{label: "/", keys: []string{"/"}, hint: "search", help: "fuzzy search projects and session titles",
 		run: func(a *app) { a.search = &searching{} }},
 	{label: "←/→", keys: []string{"Left"}, hint: "fold", help: "collapse / expand project (→ on a session opens it)",
 		run: func(a *app) { a.foldSaved(true) }},
@@ -884,19 +884,43 @@ func (a *app) toggleStar() {
 	a.refresh()
 }
 
-// searchHits lists every session whose title fuzzy-matches the query, best first;
-// collapsed projects are searched too.
+// searchHits lists the projects and sessions whose name or title fuzzy-matches the
+// query as a tree: the project with the best match first, each project's header
+// (also when only its sessions match), then its matching sessions best first.
+// Collapsed projects are searched too.
 func (a *app) searchHits() []fuzzyMatch[row] {
 	var all []row
 	for pi, p := range a.projects {
+		all = append(all, row{pi, rowHeader})
 		for si := range p.sessions {
 			all = append(all, row{pi, si})
 		}
 	}
-	return fuzzyFilter(a.search.query, all, func(r row) string { return a.projects[r.p].sessions[r.s].Title })
+	name := func(r row) string {
+		if r.s == rowHeader {
+			return a.projects[r.p].Name
+		}
+		return a.projects[r.p].sessions[r.s].Title
+	}
+	var groups [][]fuzzyMatch[row]
+	at := map[int]int{} // project index -> its group
+	for _, h := range fuzzyFilter(a.search.query, all, name) {
+		g, ok := at[h.item.p]
+		if !ok { // hits come best first, so groups do too
+			g, at[h.item.p] = len(groups), len(groups)
+			groups = append(groups, []fuzzyMatch[row]{{item: row{h.item.p, rowHeader}}})
+		}
+		if h.item.s == rowHeader {
+			groups[g][0] = h
+		} else {
+			groups[g] = append(groups[g], h)
+		}
+	}
+	return slices.Concat(groups...)
 }
 
-// searchKey edits the search; drawSearch renders it. Enter opens the highlighted hit.
+// searchKey edits the search; drawSearch renders it. Enter opens the highlighted
+// session hit, or puts the cursor on the highlighted project.
 func (a *app) searchKey(k vaxis.Key) {
 	sr := a.search
 	hits := a.searchHits()
@@ -914,6 +938,10 @@ func (a *app) searchKey(k vaxis.Key) {
 		}
 		r := hits[sr.sel].item
 		a.search = nil
+		if r.s == rowHeader {
+			a.cursor = slices.Index(a.rows(), r)
+			return
+		}
 		a.projects[r.p].Collapsed = false
 		a.cursor = slices.Index(a.rows(), r)
 		a.open()

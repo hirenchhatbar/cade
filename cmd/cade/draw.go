@@ -306,18 +306,9 @@ func (a *app) drawSidebar(side vaxis.Window) {
 	a.keepCursorVisible()
 	rows := a.rows()
 	if a.search != nil {
-		a.drawSearch(tree)
+		a.drawSearch(tree, cw)
 	} else {
-		for i, y := a.top, 0; i < len(rows) && y < treeH; i++ {
-			n := len(a.labelLines(rows[i], cw))
-			a.drawRow(tree, y, rows[i], i == a.cursor, cw)
-			if i+1 < len(rows) && rows[i+1].p == rows[i].p { // the tree line runs on through the density's blank lines
-				for g := n; g < a.rowLines(rows[i]); g++ {
-					tree.PrintTruncate(y+g, vaxis.Segment{Text: "   │", Style: a.th.projectStyle(a.projects[rows[i].p])})
-				}
-			}
-			y += a.rowLines(rows[i])
-		}
+		a.drawRows(tree, rows, nil, a.top, a.cursor, cw)
 	}
 	if overflow && a.search == nil {
 		m := a.maxTop()
@@ -353,8 +344,29 @@ func (a *app) labelLines(r row, cw int) []string {
 	return wrap(p.sessions[r.s].Title, room, titleLines)
 }
 
-// drawRow draws one tree row at line y, cw columns wide.
-func (a *app) drawRow(win vaxis.Window, y int, r row, selected bool, cw int) {
+// drawRows draws rows from index top down win, cw columns wide, the row at cursor
+// selected. pos, when set, gives row i's matched rune positions to colour.
+func (a *app) drawRows(win vaxis.Window, rows []row, pos func(i int) []int, top, cursor, cw int) {
+	_, h := win.Size()
+	for i, y := top, 0; i < len(rows) && y < h; i++ {
+		last := i+1 == len(rows) || rows[i+1].p != rows[i].p
+		var hit []int
+		if pos != nil {
+			hit = pos(i)
+		}
+		a.drawRow(win, y, rows[i], last, i == cursor, cw, hit)
+		if !last { // the tree line runs on through the density's blank lines
+			for g := len(a.labelLines(rows[i], cw)); g < a.rowLines(rows[i]); g++ {
+				win.PrintTruncate(y+g, vaxis.Segment{Text: "   │", Style: a.th.projectStyle(a.projects[rows[i].p])})
+			}
+		}
+		y += a.rowLines(rows[i])
+	}
+}
+
+// drawRow draws one tree row at line y, cw columns wide; last ends the project's
+// tree line. The runes at pos (in the project name or session title) are coloured.
+func (a *app) drawRow(win vaxis.Window, y int, r row, last, selected bool, cw int, pos []int) {
 	th := a.th
 	hl := func(s vaxis.Style) vaxis.Style {
 		if !selected {
@@ -381,19 +393,21 @@ func (a *app) drawRow(win vaxis.Window, y int, r row, selected bool, cw int) {
 		if n := a.waiting(p); p.Collapsed && n > 0 {
 			waiting = fmt.Sprintf(" ◆%d", n)
 		}
-		win.PrintTruncate(y,
-			vaxis.Segment{Text: arrow + p.Name, Style: hl(name)},
+		segs := append([]vaxis.Segment{{Text: arrow, Style: hl(name)}}, th.hitSegs(p.Name, pos, hl(name))...)
+		win.PrintTruncate(y, append(segs,
 			vaxis.Segment{Text: waiting, Style: hl(th.attention)},
-			vaxis.Segment{Text: pad("  "+a.short(p.Dir), cw-runeLen(arrow+p.Name+waiting)), Style: hl(th.muted)})
+			vaxis.Segment{Text: pad("  "+a.short(p.Dir), cw-runeLen(arrow+p.Name+waiting)), Style: hl(th.muted)})...)
 		return
 	}
 	branch := "   ├─ "
-	if r.s == len(p.sessions)-1 || (r.s == rowNew && len(p.sessions) == 0) {
+	if last {
 		branch = "   └─ "
 	}
 	label, mark, star, labelStyle, markStyle := []string{newRowLbl}, "  ", "", th.key, th.running
+	var title []rune // pos indexes it; each label line is a piece of it
 	if r.s >= 0 {
 		s := p.sessions[r.s]
+		title = []rune(s.Title)
 		label, star, labelStyle = a.labelLines(r, cw), "  ", th.base
 		if slices.Contains(a.attn, s.ID) {
 			mark, markStyle = "◆ ", th.attention
@@ -406,15 +420,26 @@ func (a *app) drawRow(win vaxis.Window, y int, r row, selected bool, cw int) {
 		}
 	}
 	room := cw - runeLen(branch+mark+star)
+	start := 0 // rune offset in title where the next line's search begins
 	for i, l := range label {
 		if i == 1 { // a wrapped title's next lines: the tree line runs on, no mark or star
 			branch, mark, star = strings.Replace(strings.Replace(branch, "├─", "│ ", 1), "└─", "  ", 1), "  ", "  "
 		}
-		win.PrintTruncate(y+i,
-			vaxis.Segment{Text: branch, Style: hl(th.projectStyle(p))},
-			vaxis.Segment{Text: mark, Style: hl(markStyle)},
-			vaxis.Segment{Text: star, Style: hl(th.key)},
-			vaxis.Segment{Text: pad(truncate(l, room), room), Style: hl(labelStyle)})
+		text := truncate(l, room)
+		piece := []rune(strings.TrimSuffix(text, "…"))
+		off := start + max(runeIndex(title[start:], piece), 0) // wrap drops spaces, so find the line in the title
+		start = off + len(piece)
+		var linePos []int
+		for _, q := range pos {
+			if q >= off && q < start {
+				linePos = append(linePos, q-off)
+			}
+		}
+		win.PrintTruncate(y+i, append([]vaxis.Segment{
+			{Text: branch, Style: hl(th.projectStyle(p))},
+			{Text: mark, Style: hl(markStyle)},
+			{Text: star, Style: hl(th.key)}},
+			th.hitSegs(pad(text, room), linePos, hl(labelStyle))...)...)
 	}
 }
 
@@ -721,16 +746,21 @@ func (a *app) drawMatch(box vaxis.Window, y, bw int, m fuzzyMatch[string], selec
 	if selected {
 		base, mark = a.th.sel, " › "
 	}
-	segs := append([]vaxis.Segment{{Text: mark, Style: base}}, hitSegs(m.item, m.pos, base)...)
+	segs := append([]vaxis.Segment{{Text: mark, Style: base}}, a.th.hitSegs(m.item, m.pos, base)...)
 	segs = append(segs, vaxis.Segment{Text: pad("/", bw-runeLen(mark+m.item)), Style: base})
 	box.PrintTruncate(y, segs...)
 }
 
-// hitSegs draws text in base, the runes at pos bold and underlined.
-func hitSegs(text string, pos []int, base vaxis.Style) []vaxis.Segment {
+// hitSegs draws text in base, the runes at pos in the key colour; the terminal
+// theme has no colours, so there they are bold and underlined.
+func (th theme) hitSegs(text string, pos []int, base vaxis.Style) []vaxis.Segment {
 	hit := base
-	hit.Attribute |= vaxis.AttrBold
-	hit.UnderlineStyle = vaxis.UnderlineSingle
+	if th.key.Foreground != 0 {
+		hit.Foreground = th.key.Foreground
+	} else {
+		hit.Attribute |= vaxis.AttrBold
+		hit.UnderlineStyle = vaxis.UnderlineSingle
+	}
 	var segs []vaxis.Segment
 	for i, r := range []rune(text) {
 		s := base
@@ -742,9 +772,9 @@ func hitSegs(text string, pos []int, base vaxis.Style) []vaxis.Segment {
 	return segs
 }
 
-// drawSearch draws the / query line and, below it, the matching sessions with
-// their project names, in place of the tree.
-func (a *app) drawSearch(win vaxis.Window) {
+// drawSearch draws the / query line and, below it, the hits as a tree like the
+// sidebar's, cw columns wide, in place of the tree.
+func (a *app) drawSearch(win vaxis.Window, cw int) {
 	th := a.th
 	sr := a.search
 	win.PrintTruncate(0,
@@ -753,31 +783,22 @@ func (a *app) drawSearch(win vaxis.Window) {
 		vaxis.Segment{Text: "▏", Style: th.key})
 	hits := a.searchHits()
 	if len(hits) == 0 {
-		win.PrintTruncate(2, vaxis.Segment{Text: "   no matching sessions", Style: th.muted})
+		win.PrintTruncate(2, vaxis.Segment{Text: "   no matches", Style: th.muted})
 		return
 	}
 	sel := max(min(sr.sel, len(hits)-1), 0)
-	_, h := win.Size()
-	listH := max((h-2)/a.rowH(), 1) // query, blank
-	top := max(sel-listH+1, 0)
-	for i := top; i < min(len(hits), top+listH); i++ {
-		h := hits[i]
-		base, mark := th.base, "   "
-		if i == sel {
-			base, mark = th.sel, " › "
-		}
-		proj := truncate(a.projects[h.item.p].Name, a.sideW()/3) + " "
-		title := truncate(a.projects[h.item.p].sessions[h.item.s].Title, a.sideW()-runeLen(mark+proj)-2)
-		muted := th.muted
-		if i == sel {
-			muted = th.sel
-		}
-		segs := append([]vaxis.Segment{{Text: mark, Style: base}}, hitSegs(title, h.pos, base)...)
-		segs = append(segs,
-			vaxis.Segment{Text: pad("", a.sideW()-runeLen(mark+title+proj)), Style: base},
-			vaxis.Segment{Text: proj, Style: muted})
-		win.PrintTruncate(2+(i-top)*a.rowH(), segs...)
+	rows := make([]row, len(hits))
+	for i, h := range hits {
+		rows[i] = h.item
 	}
+	_, h := win.Size()
+	listH := h - 2 // query, blank
+	top, used := sel, a.rowLines(rows[sel])
+	for top > 0 && used+a.rowLines(rows[top-1]) <= listH { // sel on screen, as many hits above it as fit
+		top--
+		used += a.rowLines(rows[top])
+	}
+	a.drawRows(win.New(0, 2, cw, listH), rows, func(i int) []int { return hits[i].pos }, top, sel, cw)
 }
 
 // titleOf names session id for the pane's title bar and notifications.
