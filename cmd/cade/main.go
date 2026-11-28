@@ -17,7 +17,7 @@ import (
 
 const (
 	appName  = "Cade"
-	version  = "0.1.23"
+	version  = "0.1.24"
 	appLabel = appName + " v" + version
 	sideDef  = 42            // sidebar width until resized; state.json keeps the resized one
 	sideMin  = 30            // narrowest sidebar, and narrowest pane beside it
@@ -47,6 +47,7 @@ const (
 	editorID   = "editor" // the one app-wide editor in terms
 	diffID     = "diff"   // the F3 diff in paneTerms; it is not a term
 	colsKey    = "F6"
+	foldKey    = "F7"
 	fullKey    = "F11"
 	splitMinW  = 60 // columns each side needs for side by side; a narrower pane stacks them
 	splitMin   = 10 // shell.height and diff.height bounds and settings step, in % of the pane

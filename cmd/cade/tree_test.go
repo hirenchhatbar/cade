@@ -149,6 +149,32 @@ func TestFold(t *testing.T) {
 	}
 }
 
+func TestToggleFold(t *testing.T) {
+	a := &app{cfgPath: filepath.Join(t.TempDir(), "projects.json")}
+	a.projects = []*project{{Name: "a", Dir: "/a", sessions: []session{{ID: "s1"}}}, {Name: "b", Dir: "/b"}}
+	a.cursor = 2 // s1: collapses straight from a session row
+	a.toggleFold()
+	if !a.projects[0].Collapsed || a.cursor != 0 {
+		t.Fatalf("collapse: cursor %d collapsed %v", a.cursor, a.projects[0].Collapsed)
+	}
+	if saved, _ := loadProjects(a.cfgPath); !saved[0].Collapsed {
+		t.Fatal("collapsed state not saved")
+	}
+	a.toggleFold()
+	if a.projects[0].Collapsed || a.cursor != 0 || len(a.rows()) != 5 {
+		t.Fatalf("expand: cursor %d rows %d", a.cursor, len(a.rows()))
+	}
+}
+
+func TestRowAtGap(t *testing.T) {
+	// comfortable density: each row takes 2 lines, the second blank
+	a := &app{tree: tree{visible: 10, gap: 1, rowLines: func(row) int { return 2 }}}
+	a.projects = []*project{{Name: "a", Dir: "/a", sessions: make([]session, 2)}}
+	if a.rowAt(0) != 0 || a.rowAt(1) != -1 || a.rowAt(2) != 1 || a.rowAt(3) != -1 {
+		t.Fatalf("rowAt %d %d %d %d", a.rowAt(0), a.rowAt(1), a.rowAt(2), a.rowAt(3))
+	}
+}
+
 func TestScrollTree(t *testing.T) {
 	a := &app{tree: tree{visible: 3}}
 	a.projects = []*project{{Name: "a", Dir: "/a", sessions: make([]session, 8)}} // 10 rows

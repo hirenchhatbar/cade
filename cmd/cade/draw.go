@@ -299,6 +299,7 @@ func (a *app) drawSidebar(side vaxis.Window) {
 	a.visible = treeH
 	cw := a.sideW() // row content width
 	a.rowLines = func(r row) int { return len(a.labelLines(r, cw)) - 1 + a.rowH() }
+	a.gap = a.rowH() - 1
 	overflow := a.maxTop() > 0
 	if overflow {
 		cw = a.sideW() - 1 // last column is the scrollbar; narrower rows only wrap more, so it still overflows

@@ -70,6 +70,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `n` | new session in this project |
 | `/` | fuzzy search projects and session titles |
 | `←/→` | collapse / expand project (→ on a session opens it) |
+| `␣` | collapse ↔ expand the cursor's project, from any of its rows (F7 from the pane) |
 | `a` | add project (name, then directory; ⇥ opens a match) |
 | `⇧PgUp/Dn` | move project up / down |
 | `r` | rename session (empty = Claude's title, ^T generates one) or project (empty = folder name) |
@@ -104,6 +105,7 @@ The tables below are the output of `cade --keys`; regenerate them from there whe
 | `⌥↑/⌥↓` | with the diff, shell or editor split with the session: focus the session / the diff, shell or editor |
 | `⌥⇧←/→` | move the split line: ← / ↑ grows the diff, shell or editor, → / ↓ shrinks it, saved to config.yaml; or drag the line |
 | `F6` | diff, shell or editor beside ↔ under the session, remembered; under while the pane is under 121 columns |
+| `F7` | collapse ↔ expand the sidebar cursor's project, from the pane; the session keeps running and stays shown (␣ in the sidebar) |
 | `F11` | focused window fills the pane ↔ split: the session (diff, shell or editor stays open), or the diff, shell or editor (remembered); split sizes in , settings |
 | `Ctrl+R` | rename this session (goes to the sidebar) |
 | `Ctrl+D` | delete this session from disk (asks) |
@@ -369,7 +371,7 @@ editor:
   height: 70
 ```
 
-Keys go to the editor except Cade's own (`Ctrl+Esc`, `F2`–`F6`, `F11`, `F12`, `Ctrl+Z`,
+Keys go to the editor except Cade's own (`Ctrl+Esc`, `F2`–`F7`, `F11`, `F12`, `Ctrl+Z`,
 `Ctrl+⇧Q`, `^↑/^↓`, `^⇧↑/^⇧↓`, `F6`, `⌥⇧` arrows); `Ctrl+F` stays with the editor. Quitting Cade closes
 the editor without saving.
 

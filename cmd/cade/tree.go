@@ -27,6 +27,7 @@ type tree struct {
 	top      int           // first visible row
 	visible  int           // screen lines for rows, set by the renderer
 	rowLines func(row) int // screen lines a row takes, set by the renderer; nil = 1
+	gap      int           // blank lines under each row (sidebar density), set by the renderer
 }
 
 // rows flattens projects and their sessions into the sidebar tree.
@@ -94,6 +95,14 @@ func (t *tree) fold(collapse bool) bool {
 	return true
 }
 
+// toggle collapses or expands the cursor's project, from any of its rows, and
+// puts the cursor on its header.
+func (t *tree) toggle() {
+	p := t.projects[t.current().p]
+	p.Collapsed = !p.Collapsed
+	t.restore(rowKey{dir: p.Dir, s: rowHeader})
+}
+
 // move swaps the cursor's project with its neighbour; it reports whether it moved.
 func (t *tree) move(dir int) bool {
 	cur := t.current()
@@ -157,11 +166,15 @@ func (t *tree) maxTop() int {
 	return 0
 }
 
-// rowAt is the row index at screen line y of the tree, or -1 below the last row.
+// rowAt is the row index at screen line y of the tree, or -1 below the last
+// row or on a row's blank gap lines.
 func (t *tree) rowAt(y int) int {
 	rows := t.rows()
 	for i := t.top; i < len(rows) && y >= 0; i++ {
 		if y -= t.lines(rows, i); y < 0 {
+			if -y <= t.gap {
+				return -1
+			}
 			return i
 		}
 	}

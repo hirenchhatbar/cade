@@ -54,6 +54,8 @@ var sidebarKeys = []binding{
 			a.foldSaved(false)
 		}
 	}},
+	{label: "␣", keys: []string{"space"}, hint: "toggle", help: "collapse ↔ expand the cursor's project, from any of its rows (F7 from the pane)",
+		run: (*app).toggleFold},
 	{label: "a", keys: []string{"a"}, hint: "add project", help: "add project (name, then directory; ⇥ opens a match)",
 		run: (*app).openAdd},
 	{label: "⇧PgUp/Dn", keys: []string{"Shift+Page_Up"}, hint: "reorder", help: "move project up / down",
@@ -131,6 +133,9 @@ var paneKeys = []binding{
 	{label: colsKey, keys: []string{colsKey}, hint: "side by side", show: (*app).lowerShown, when: (*app).lowerShown,
 		help: fmt.Sprintf("diff, shell or editor beside ↔ under the session, remembered; under while the pane is under %d columns", 2*splitMinW+1),
 		run:  (*app).toggleCols},
+	{label: foldKey, keys: []string{foldKey}, hint: "fold", when: hasPane,
+		help: "collapse ↔ expand the sidebar cursor's project, from the pane; the session keeps running and stays shown (␣ in the sidebar)",
+		run:  (*app).toggleFold},
 	{label: fullKey, keys: []string{fullKey}, hint: "full", show: (*app).lowerShown, when: (*app).lowerShown,
 		help: "focused window fills the pane ↔ split: the session (diff, shell or editor stays open), or the diff, shell or editor (remembered); split sizes in , settings",
 		run:  (*app).toggleFull},
@@ -273,6 +278,11 @@ func (a *app) foldSaved(collapse bool) {
 	if a.fold(collapse) {
 		a.save()
 	}
+}
+
+func (a *app) toggleFold() {
+	a.toggle()
+	a.save()
 }
 
 func (a *app) moveSaved(dir int) {
@@ -491,8 +501,8 @@ func (a *app) sidebarMouse(ev vaxis.Mouse, drag bool) {
 		a.cursor = a.rowAt(line)
 		if rows[a.cursor].s >= 0 && ev.Col >= starX && ev.Col < starX+2 {
 			a.toggleStar()
-		} else if rows[a.cursor].s != rowHeader {
-			a.open()
+		} else if s := rows[a.cursor].s; s >= 0 || s == rowNew && ev.Col >= starX && ev.Col < starX+runeLen(newRowLbl) {
+			a.open() // the new-session row starts one only on its label, not its blank rest
 		}
 	}
 }
@@ -541,11 +551,11 @@ func trimCopy(s string) string {
 	return strings.Join(lines, "\n")
 }
 
-const confirmHint = "[y] yes  [n] no"
+const confirmHint = "[y/⏎] yes  [n/Esc] no"
 
 func (a *app) confirmKey(k vaxis.Key) {
 	switch {
-	case k.MatchString("y"):
+	case k.MatchString("y"), k.MatchString("Enter"):
 		a.answer(true)
 	case k.MatchString("n"), k.MatchString("Escape"):
 		a.answer(false)

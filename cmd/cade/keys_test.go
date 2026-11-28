@@ -711,3 +711,31 @@ func TestDragPastEdgeScrolls(t *testing.T) {
 		t.Fatalf("selection %q", s)
 	}
 }
+
+func TestConfirmEnterEsc(t *testing.T) {
+	a := &app{}
+	yes := false
+	a.confirm = &confirmation{yes: func() { yes = true }}
+	a.confirmKey(vaxis.Key{Keycode: vaxis.KeyEsc})
+	if a.confirm != nil || yes {
+		t.Fatalf("Esc: confirm %v yes %v", a.confirm, yes)
+	}
+	a.confirm = &confirmation{yes: func() { yes = true }}
+	a.confirmKey(vaxis.Key{Keycode: vaxis.KeyEnter})
+	if a.confirm != nil || !yes {
+		t.Fatalf("Enter: confirm %v yes %v", a.confirm, yes)
+	}
+}
+
+func TestNewRowClickOnLabelOnly(t *testing.T) {
+	a := &app{pending: map[string]bool{}, terms: map[string]pane{}}
+	a.projects = []*project{{Name: "a", Dir: "/a"}}
+	a.visible = 10
+	click := func(col int) {
+		a.sidebarMouse(vaxis.Mouse{Button: vaxis.MouseLeftButton, EventType: vaxis.EventPress, Col: col, Row: titleH + 1}, true)
+	}
+	click(starX + runeLen(newRowLbl)) // blank rest of the [n] new session row
+	if len(a.projects[0].sessions) != 0 || a.cursor != 1 {
+		t.Fatalf("blank click: sessions %d cursor %d", len(a.projects[0].sessions), a.cursor)
+	}
+}
